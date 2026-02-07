@@ -41,6 +41,12 @@ Install LinkServer (user-local, no sudo):
 ACCEPT_NXP_LINKSERVER_LICENSE=1 ./tools/install_linkserver_user.sh
 ```
 
+If flashing fails with `No probes detected`, install udev rules (requires sudo), then unplug/replug the board:
+
+```bash
+./tools/install_mculink_udev_rules.sh
+```
+
 Then flash:
 
 ```bash
