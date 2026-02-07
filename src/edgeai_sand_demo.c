@@ -7,6 +7,7 @@
 #include "fxls8974cf.h"
 #include "sim.h"
 
+#include "app.h"
 #include "board.h"
 #include "clock_config.h"
 #include "fsl_clock.h"

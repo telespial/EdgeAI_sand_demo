@@ -1,5 +1,6 @@
 #include "sim.h"
 
+#include <stdbool.h>
 #include <string.h>
 
 static uint32_t xorshift32(uint32_t x) {
@@ -187,4 +188,3 @@ void sim_step(sim_grid_t *g, grav_dir_t dir, sim_rng_t *rng) {
     }
   }
 }
-

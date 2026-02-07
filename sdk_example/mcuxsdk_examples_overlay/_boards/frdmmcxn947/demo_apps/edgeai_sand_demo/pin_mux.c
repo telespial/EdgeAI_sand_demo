@@ -4,7 +4,7 @@
  * Focus:
  * - Debug console on FLEXCOMM4
  * - mikroBUS I2C on FLEXCOMM3 (FC3_P0/FC3_P1 on PIO1_0/PIO1_1)
- * - mikroBUS INT on PIO5_7 as GPIO input
+ * - mikroBUS INT is intentionally not configured yet (I2C bringup first)
  */
 
 #include "fsl_common.h"
@@ -21,8 +21,6 @@ void BOARD_InitPins(void)
 {
     CLOCK_EnableClock(kCLOCK_Port0);
     CLOCK_EnableClock(kCLOCK_Port1);
-    CLOCK_EnableClock(kCLOCK_Port5);
-    CLOCK_EnableClock(kCLOCK_Gpio5);
 
     // SWO
     const port_pin_config_t port0_2_pinB16_config = {
@@ -97,25 +95,5 @@ void BOARD_InitPins(void)
     };
     PORT_SetPinConfig(PORT1, 1U, &port1_1_i2c_scl);
 
-    // mikroBUS INT (FXLS8974 INT1) on PIO5_7 as GPIO input.
-    const port_pin_config_t port5_7_int = {
-        .pullSelect = kPORT_PullUp,
-        .pullValueSelect = kPORT_LowPullResistor,
-        .slewRate = kPORT_FastSlewRate,
-        .passiveFilterEnable = kPORT_PassiveFilterDisable,
-        .openDrainEnable = kPORT_OpenDrainDisable,
-        .driveStrength = kPORT_LowDriveStrength,
-        .mux = kPORT_MuxAlt0, // PIO5_7
-        .inputBuffer = kPORT_InputBufferEnable,
-        .invertInput = kPORT_InputNormal,
-        .lockRegister = kPORT_UnlockRegister,
-    };
-    PORT_SetPinConfig(PORT5, 7U, &port5_7_int);
-
-    gpio_pin_config_t int_cfg = {
-        .pinDirection = kGPIO_DigitalInput,
-        .outputLogic = 0U,
-    };
-    GPIO_PinInit(GPIO5, 7U, &int_cfg);
+    // INT line can be added after confirming the correct GPIO/PORT mapping on this board.
 }
-

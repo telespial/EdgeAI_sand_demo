@@ -5,7 +5,7 @@
 - Working copy path: `projects/nxp/frdm-mcxn947/EdgeAI_sand_demo/sdk_example/`
 
 ## Last Run
-- Date:
-- Result:
-- Binary:
-- Notes:
+- Date: 2026-02-07
+- Result: build ok (flash not attempted)
+- Binary: `codemaster/vendors/nxp/mcuxpresso-sdk/build/edgeai_sand_demo_cm33_core0.bin`
+- Notes: Toolchain bootstrapped user-locally; LinkServer (x86_64) still needs install for flashing.

@@ -1,4 +1,5 @@
 #pragma once
 
-// Placeholder for future app-specific build-time config.
+// Minimal app declarations used by the app sources which live outside the SDK tree.
 
+void BOARD_InitHardware(void);
