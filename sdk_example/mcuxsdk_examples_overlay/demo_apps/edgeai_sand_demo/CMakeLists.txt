@@ -18,6 +18,7 @@ mcux_add_source(
     BASE_PATH ${EDGEAI_ROOT}
     SOURCES src/edgeai_sand_demo.c
             src/fxls8974cf.c
+            src/par_lcd_s035.c
             src/sim.c
 )
 

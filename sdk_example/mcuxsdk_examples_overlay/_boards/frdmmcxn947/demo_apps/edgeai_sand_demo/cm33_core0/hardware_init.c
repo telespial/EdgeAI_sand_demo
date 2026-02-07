@@ -17,8 +17,11 @@ void BOARD_InitHardware(void)
     CLOCK_SetClkDiv(kCLOCK_DivFlexcom3Clk, 1u);
     CLOCK_AttachClk(kFRO12M_to_FLEXCOMM3);
 
+    /* LCD (FlexIO0, PAR-LCD-S035 shield) */
+    CLOCK_SetClkDiv(kCLOCK_DivFlexioClk, 1u);
+    CLOCK_AttachClk(kPLL0_to_FLEXIO);
+
     BOARD_InitBootPins();
     BOARD_InitBootClocks();
     BOARD_InitDebugConsole();
 }
-

@@ -13,10 +13,10 @@ extern "C" {
 
 void BOARD_InitBootPins(void);
 void BOARD_InitPins(void);
+void BOARD_InitLcdPins(void);
 
 #if defined(__cplusplus)
 }
 #endif
 
 #endif /* _PIN_MUX_H_ */
-

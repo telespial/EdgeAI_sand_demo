@@ -5,6 +5,7 @@
 
 #include "accel4_click.h"
 #include "fxls8974cf.h"
+#include "par_lcd_s035.h"
 #include "sim.h"
 
 #include "app.h"
@@ -150,6 +151,15 @@ int main(void)
     (void)fxls8974_set_fsr(&dev, FXLS8974_FSR_4G);
     (void)fxls8974_set_active(&dev, true);
 
+    if (!par_lcd_s035_init())
+    {
+        PRINTF("LCD init failed\r\n");
+        for (;;)
+        {
+        }
+    }
+    par_lcd_s035_fill(0x0000u);
+
     static uint8_t cells[160u * 120u];
     sim_grid_t grid = {.w = 160, .h = 120, .cells = cells};
     sim_rng_t rng;
@@ -166,9 +176,19 @@ int main(void)
             sim_step(&grid, g, &rng);
             sim_step(&grid, g, &rng);
 
+            /* Render at a lower cadence than sim updates. */
+            if ((tick % 4u) == 0u)
+            {
+                par_lcd_s035_render_grid(&grid);
+            }
+
             if ((tick++ % 60u) == 0u)
             {
-                PRINTF("accel raw x=%d y=%d z=%d grav=%u\r\n", s.x, s.y, s.z, (unsigned)g);
+                /* fsl_debug_console printf formatting can be picky; cast explicitly. */
+                long ax = (long)((int32_t)s.x);
+                long ay = (long)((int32_t)s.y);
+                long az = (long)((int32_t)s.z);
+                PRINTF("accel raw x=%ld y=%ld z=%ld grav=%u\r\n", ax, ay, az, (unsigned)g);
             }
         }
     }
