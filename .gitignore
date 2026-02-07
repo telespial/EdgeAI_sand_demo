@@ -1,6 +1,7 @@
 # Local SDK workspace + build outputs
 mcuxsdk_ws*/
 build/
+downloads/
 
 # Python/OS
 __pycache__/

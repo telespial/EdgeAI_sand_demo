@@ -35,9 +35,14 @@ Build output:
 
 Flashing uses NXP LinkServer (x86_64) via `west flash -r linkserver`.
 
-After installing LinkServer and ensuring `LinkServer` is on `PATH`:
+Install LinkServer (user-local, no sudo):
+
+```bash
+ACCEPT_NXP_LINKSERVER_LICENSE=1 ./tools/install_linkserver_user.sh
+```
+
+Then flash:
 
 ```bash
 ./tools/flash_frdmmcxn947.sh
 ```
-
