@@ -33,6 +33,13 @@ WS_DIR="$PWD/mcuxsdk_ws_test" ./tools/flash_frdmmcxn947.sh
 - Behavior: adds a clipped wireframe “room” (walls + long axes) and updates ball/shadow raster drawing to avoid wiping background lines.
 - Notes: this is the restore point to return to if “ball disappears” or walls/axes stop drawing correctly.
 
+### 2026-02-08 No Environment Lines (Ball Only)
+- Tag: `milestone_no_env_lines_ball_fix_v1`
+- Commit: `a22c521edb6a9f8519ab2d300f5e9b459acdf9b6`
+- Hardware: FRDM-MCXN947 + PAR-LCD-S035 + Accel 4 Click (FXLS8974CF over mikroBUS/I2C)
+- Behavior: disables the red/green/blue axis + wall wireframe; keeps black background with the silver ball (+ trails/shadow).
+- Notes: use this if the environment overlay is distracting or causes visual artifacts.
+
 ## Template (Copy/Paste)
 ### YYYY-MM-DD Short Name
 - Tag: `TAG_NAME`
