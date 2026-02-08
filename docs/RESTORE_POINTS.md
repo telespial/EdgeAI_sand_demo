@@ -18,13 +18,13 @@ WS_DIR="$PWD/mcuxsdk_ws_test" ./tools/flash_frdmmcxn947.sh
 
 ## Restore Points
 
-### 2026-02-08 Golden (Raster Ball + Trails)
+### 2026-02-08 Golden (Dune Background + Perspective Ball)
 - Tag: `GOLDEN_2026-02-08_v9`
-- Also: `milestone_raster_flicker_npu_v9`
-- Commit: `5d569d4352fc723f6d6d567dcdd3c46f58025fd4`
+- Also: `milestone_dune_bg_fullscreen_v1`
+- Commit: `c45d0b6ba824a5714d79b1449e1fc22268d29758`
 - Hardware: FRDM-MCXN947 + PAR-LCD-S035 + Accel 4 Click (FXLS8974CF over mikroBUS/I2C)
-- Behavior: tilt-controlled silver ball with shadow + trails (raster renderer)
-- Notes: keep this as the baseline restore point if anything breaks.
+- Behavior: dune background rendered full-screen at boot; tilt-controlled silver ball with shadow + trails; ball radius scales with y-position for a simple perspective cue.
+- Notes: baseline restore point (expected stable visuals).
 
 ### 2026-02-08 Environment Walls + Axes (Background Preserved)
 - Tag: `milestone_env_walls_axes_v1`

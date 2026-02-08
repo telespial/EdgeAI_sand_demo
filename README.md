@@ -15,12 +15,11 @@ Current rendering notes:
 
 ## Known-Good Revision (Golden)
 If anything breaks, return to this exact revision:
-- Tag: `milestone_raster_flicker_npu_v9`
-- Commit: `5d569d4352fc723f6d6d567dcdd3c46f58025fd4`
+- Tag: `GOLDEN_2026-02-08_v9`
 
 Checkout + rebuild + flash:
 ```bash
-git checkout milestone_raster_flicker_npu_v9
+git checkout GOLDEN_2026-02-08_v9
 MCUX_EXAMPLES_DIR="$PWD/mcuxsdk_ws_test/mcuxsdk/examples" ./sdk_example/install_mcux_overlay.sh
 ninja -C mcuxsdk_ws_test/build
 WS_DIR="$PWD/mcuxsdk_ws_test" ./tools/flash_frdmmcxn947.sh
