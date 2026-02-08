@@ -34,6 +34,14 @@ WS_DIR="$PWD/mcuxsdk_ws_test" ./tools/flash_frdmmcxn947.sh
 - Behavior: on boot, draws a large centered 3D title; then the ball autonomously rolls a serpentine pattern to paint the dune across the full screen; then hands control to the tilt sensor for normal operation.
 - Notes: keep `GOLDEN_2026-02-08_v9` as the rollback anchor even if this entry becomes the preferred boot experience.
 
+### 2026-02-08 Boot Title + Auto-Paint v2 (Ball Spawns After Title)
+- Tag: `milestone_boot_title_autopaint_v2`
+- Lock tag: `LOCK_milestone_boot_title_autopaint_v2_fa6ac93` (includes SHA in name; do not move)
+- Commit: `fa6ac93d799f5a9628a0f022970b942e5b185cd5`
+- Hardware: FRDM-MCXN947 + PAR-LCD-S035 + Accel 4 Click (FXLS8974CF over mikroBUS/I2C)
+- Behavior: title holds without being overwritten; then screen wipes to black, ball spawns at the first paint waypoint, and autopaint visibly reveals the dune; once a full-screen background pass completes, tilt control starts.
+- Notes: this fixes the v1 behavior where the title could be partially overwritten while the ball was painting.
+
 ### 2026-02-08 Rescue (Working Raster Fallback)
 - Tag: `RESCUE_working_raster_5d569d4`
 - Also: `GOLDEN_2026-02-08_v9_raster_prev`, `milestone_raster_flicker_npu_v9`
