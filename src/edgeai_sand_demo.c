@@ -377,6 +377,13 @@ int main(void)
 
         if (do_render)
         {
+            /* The trail is a ring buffer; one point is "removed" each frame when we overwrite
+             * the head slot. Include that removed point in the dirty rect so we clear it,
+             * otherwise stale dots can remain on-screen.
+             */
+            int32_t removed_tx = trail_x[trail_head];
+            int32_t removed_ty = trail_y[trail_head];
+
             /* Update trail ring. */
             trail_x[trail_head] = (int16_t)cx;
             trail_y[trail_head] = (int16_t)cy;
@@ -393,6 +400,10 @@ int main(void)
                 if (tx > maxx_r) maxx_r = tx;
                 if (ty > maxy_r) maxy_r = ty;
             }
+            if (removed_tx < minx_r) minx_r = removed_tx;
+            if (removed_ty < miny_r) miny_r = removed_ty;
+            if (removed_tx > maxx_r) maxx_r = removed_tx;
+            if (removed_ty > maxy_r) maxy_r = removed_ty;
             if (prev_x < minx_r) minx_r = prev_x;
             if (prev_y < miny_r) miny_r = prev_y;
             if (prev_x > maxx_r) maxx_r = prev_x;
