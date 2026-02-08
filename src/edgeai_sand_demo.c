@@ -120,6 +120,13 @@ static void dwt_cycle_counter_init(void)
 
 static int32_t abs_i32(int32_t v) { return (v < 0) ? -v : v; }
 
+static int32_t clamp_i32_sym(int32_t v, int32_t limit_abs)
+{
+    if (v > limit_abs) return limit_abs;
+    if (v < -limit_abs) return -limit_abs;
+    return v;
+}
+
 int main(void)
 {
     BOARD_InitHardware();
@@ -290,9 +297,36 @@ int main(void)
         ax_lp = clamp_i32(ax_lp, -ACCEL_MAP_DENOM * 2, ACCEL_MAP_DENOM * 2);
         ay_lp = clamp_i32(ay_lp, -ACCEL_MAP_DENOM * 2, ACCEL_MAP_DENOM * 2);
 
-        /* Deadzone: keep tiny, otherwise motion can look "stuck". */
-        if (abs_i32(ax_lp) < 1) ax_lp = 0;
-        if (abs_i32(ay_lp) < 1) ay_lp = 0;
+        /* Deadzone + soft response curve (arcade "marble" feel).
+         * We use a small deadzone then a blended linear/cubic curve so it isn't twitchy
+         * near center, but still responds strongly at larger tilts.
+         */
+        const int32_t deadzone = 10; /* counts */
+        int32_t ax_dz = ax_lp;
+        int32_t ay_dz = ay_lp;
+        if (abs_i32(ax_dz) <= deadzone) ax_dz = 0;
+        else ax_dz -= (ax_dz > 0) ? deadzone : -deadzone;
+        if (abs_i32(ay_dz) <= deadzone) ay_dz = 0;
+        else ay_dz -= (ay_dz > 0) ? deadzone : -deadzone;
+
+        /* Normalize to Q15 ~= [-1,1] at 1g. */
+        int32_t ax_n_q15 = (int32_t)(((int64_t)ax_dz << 15) / (int64_t)ACCEL_MAP_DENOM);
+        int32_t ay_n_q15 = (int32_t)(((int64_t)ay_dz << 15) / (int64_t)ACCEL_MAP_DENOM);
+        ax_n_q15 = clamp_i32_sym(ax_n_q15, 32767);
+        ay_n_q15 = clamp_i32_sym(ay_n_q15, 32767);
+
+        /* cubic = x^3 (Q15) */
+        int32_t ax2 = (int32_t)(((int64_t)ax_n_q15 * ax_n_q15) >> 15);
+        int32_t ay2 = (int32_t)(((int64_t)ay_n_q15 * ay_n_q15) >> 15);
+        int32_t ax_cu_q15 = (int32_t)(((int64_t)ax2 * ax_n_q15) >> 15);
+        int32_t ay_cu_q15 = (int32_t)(((int64_t)ay2 * ay_n_q15) >> 15);
+
+        /* Blend: 35% linear + 65% cubic (alpha in Q15). */
+        const int32_t alpha_q15 = 11469; /* ~0.35 */
+        int32_t ax_soft_q15 = (int32_t)(((int64_t)ax_n_q15 * alpha_q15 +
+                                         (int64_t)ax_cu_q15 * ((1 << 15) - alpha_q15)) >> 15);
+        int32_t ay_soft_q15 = (int32_t)(((int64_t)ay_n_q15 * alpha_q15 +
+                                         (int64_t)ay_cu_q15 * ((1 << 15) - alpha_q15)) >> 15);
 
         /* If accel read is failing, force a visible change so it doesn't look like
          * the demo is broken in a mysterious way.
@@ -300,10 +334,10 @@ int main(void)
         uint16_t bg = (accel_fail > 0) ? 0x1800u /* dark red */ : 0x0000u;
 
         /* Physics: fixed-step integration at sim_step_q16. */
-        const int32_t a_px_s2 = 8000; /* px/s^2 at ~1g */
-        const int32_t a_scale_q16 = (int32_t)(((int64_t)a_px_s2 << 16) / ACCEL_MAP_DENOM);
-        int32_t ax_a_q16 = ax_lp * a_scale_q16;
-        int32_t ay_a_q16 = ay_lp * a_scale_q16;
+        const int32_t a_px_s2 = 4200; /* px/s^2 at ~1g (arcade, not twitchy) */
+        /* soft_q15 * a_px_s2 gives Q15 px/s^2; convert to Q16 by <<1 */
+        int32_t ax_a_q16 = (int32_t)(((int64_t)ax_soft_q15 * a_px_s2) << 1);
+        int32_t ay_a_q16 = (int32_t)(((int64_t)ay_soft_q15 * a_px_s2) << 1);
 
         const int32_t minx = BALL_R + 2;
         const int32_t miny = BALL_R + 2;
