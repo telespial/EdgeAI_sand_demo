@@ -18,13 +18,21 @@ WS_DIR="$PWD/mcuxsdk_ws_test" ./tools/flash_frdmmcxn947.sh
 
 ## Restore Points
 
-### 2026-02-08 Golden (Raster Ball + Trails)
+### 2026-02-08 Golden v9 (Dune Background + Perspective Ball)
 - Tag: `GOLDEN_2026-02-08_v9`
-- Also: `milestone_raster_flicker_npu_v9`
+- Lock tag: `GOLDEN_LOCK_2026-02-08_v9_c45d0b6` (includes SHA in name; do not move)
+- Commit: `c45d0b6ba824a5714d79b1449e1fc22268d29758`
+- Hardware: FRDM-MCXN947 + PAR-LCD-S035 + Accel 4 Click (FXLS8974CF over mikroBUS/I2C)
+- Behavior: dune background behind tilt-controlled silver ball; ball radius scales with y-position for a simple perspective cue. (Known quirk at this revision: when the ball shrinks, edge contact feels offset.)
+- Notes: this is the revision referenced by the “ball moves away from edge as ball gets smaller” report.
+
+### 2026-02-08 Rescue (Working Raster Fallback)
+- Tag: `RESCUE_working_raster_5d569d4`
+- Also: `GOLDEN_2026-02-08_v9_raster_prev`, `milestone_raster_flicker_npu_v9`
 - Commit: `5d569d4352fc723f6d6d567dcdd3c46f58025fd4`
 - Hardware: FRDM-MCXN947 + PAR-LCD-S035 + Accel 4 Click (FXLS8974CF over mikroBUS/I2C)
-- Behavior: tilt-controlled silver ball with shadow + trails (raster renderer)
-- Notes: keep this as the baseline restore point if anything breaks.
+- Behavior: known-good tilt-controlled silver ball with shadow + trails (raster renderer, no dune background).
+- Notes: use this if dune background builds hang or the ball disappears; treat the full SHA above as the source of truth.
 
 ### 2026-02-08 Environment Walls + Axes (Background Preserved)
 - Tag: `milestone_env_walls_axes_v1`
