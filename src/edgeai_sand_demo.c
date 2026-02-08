@@ -71,6 +71,12 @@ static int32_t edgeai_ball_r_for_y(int32_t cy)
 #define EDGEAI_I2C LPI2C3
 #endif
 
+/* NOTE: This demo assumes the accel is on LPI2C3 (LP_FLEXCOMM3 IRQ). If you change
+ * EDGEAI_I2C, you must update the IRQ handler and instance index below.
+ */
+#define EDGEAI_I2C_INSTANCE 3u
+#define EDGEAI_I2C_IRQN     LP_FLEXCOMM3_IRQn
+
 /* NPU: keep init enabled, but inference can be disabled if it blocks on a given setup. */
 #ifndef EDGEAI_ENABLE_NPU_INFERENCE
 #define EDGEAI_ENABLE_NPU_INFERENCE 0
@@ -91,6 +97,54 @@ static uint32_t edgeai_i2c_get_freq(void)
     return CLOCK_GetLPFlexCommClkFreq(3u);
 }
 
+static lpi2c_master_handle_t s_i2c_handle;
+static volatile bool s_i2c_done;
+static volatile status_t s_i2c_status;
+
+static void edgeai_i2c_cb(LPI2C_Type *base, lpi2c_master_handle_t *handle, status_t status, void *userData)
+{
+    (void)base;
+    (void)handle;
+    (void)userData;
+    s_i2c_status = status;
+    s_i2c_done = true;
+}
+
+void LP_FLEXCOMM3_IRQHandler(void)
+{
+    /* MCUX LPI2C uses an instance index here, not the base pointer. */
+    LPI2C_MasterTransferHandleIRQ(EDGEAI_I2C_INSTANCE, &s_i2c_handle);
+}
+
+static bool edgeai_i2c_xfer_timeout(lpi2c_master_transfer_t *xfer, uint32_t timeout_us)
+{
+    if (!xfer) return false;
+
+    s_i2c_done = false;
+    s_i2c_status = kStatus_Fail;
+
+    status_t st = LPI2C_MasterTransferNonBlocking(EDGEAI_I2C, &s_i2c_handle, xfer);
+    if (st != kStatus_Success) return false;
+
+    uint32_t cps = SystemCoreClock ? SystemCoreClock : 150000000u;
+    uint32_t start = DWT->CYCCNT;
+    uint32_t timeout_cyc = (uint32_t)(((uint64_t)timeout_us * (uint64_t)cps) / 1000000u);
+    if (timeout_cyc == 0u) timeout_cyc = 1u;
+
+    while (!s_i2c_done)
+    {
+        if ((DWT->CYCCNT - start) > timeout_cyc)
+        {
+            /* Abort and reset so a wedged I2C bus can't hang rendering forever. */
+            LPI2C_MasterTransferAbort(EDGEAI_I2C, &s_i2c_handle);
+            LPI2C_MasterReset(EDGEAI_I2C);
+            return false;
+        }
+        __NOP();
+    }
+    return (s_i2c_status == kStatus_Success);
+}
+
 static bool edgeai_i2c_write(uint8_t addr7, uint8_t reg, const uint8_t *data, uint32_t len)
 {
     lpi2c_master_transfer_t xfer;
@@ -102,7 +156,7 @@ static bool edgeai_i2c_write(uint8_t addr7, uint8_t reg, const uint8_t *data, ui
     xfer.data = (uint8_t *)data;
     xfer.dataSize = len;
     xfer.flags = kLPI2C_TransferDefaultFlag;
-    return (LPI2C_MasterTransferBlocking(EDGEAI_I2C, &xfer) == kStatus_Success);
+    return edgeai_i2c_xfer_timeout(&xfer, 50000u);
 }
 
 static bool edgeai_i2c_read(uint8_t addr7, uint8_t reg, uint8_t *data, uint32_t len)
@@ -116,7 +170,7 @@ static bool edgeai_i2c_read(uint8_t addr7, uint8_t reg, uint8_t *data, uint32_t 
     xfer.data = data;
     xfer.dataSize = len;
     xfer.flags = kLPI2C_TransferDefaultFlag;
-    return (LPI2C_MasterTransferBlocking(EDGEAI_I2C, &xfer) == kStatus_Success);
+    return edgeai_i2c_xfer_timeout(&xfer, 50000u);
 }
 
 static void map_accel_xy(int32_t *ax, int32_t *ay)
@@ -188,6 +242,8 @@ int main(void)
     /* Be conservative; some shield/cable setups are flaky at 400k. */
     masterCfg.baudRate_Hz = 100000u;
     LPI2C_MasterInit(EDGEAI_I2C, &masterCfg, edgeai_i2c_get_freq());
+    LPI2C_MasterTransferCreateHandle(EDGEAI_I2C, &s_i2c_handle, edgeai_i2c_cb, NULL);
+    EnableIRQ(EDGEAI_I2C_IRQN);
 
     fxls8974_dev_t dev = {
         .addr7 = 0,
