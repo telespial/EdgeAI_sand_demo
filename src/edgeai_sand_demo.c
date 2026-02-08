@@ -20,6 +20,10 @@
 #define LCD_W 480
 #define LCD_H 320
 
+/* Tile renderer maximum blit size. Keep in sync with the tile buffer allocation. */
+#define EDGEAI_TILE_MAX_W 200
+#define EDGEAI_TILE_MAX_H 200
+
 /* Ball radius tuning.
  * We apply a simple depth cue: ball gets smaller toward the top ("far") and larger toward the
  * bottom ("near") to better match the dune background's perspective.
@@ -156,6 +160,158 @@ static int32_t clamp_i32_sym(int32_t v, int32_t limit_abs)
     return v;
 }
 
+typedef struct edgeai_pt_s
+{
+    int16_t x;
+    int16_t y;
+} edgeai_pt_t;
+
+static const uint8_t *edgeai_glyph5x7(char c)
+{
+    /* Each glyph is 7 rows, 5 bits wide, MSB-first in the low 5 bits (bit 4..0). */
+    static const uint8_t SPACE[7] = {0, 0, 0, 0, 0, 0, 0};
+    static const uint8_t A[7] = {0x0E, 0x11, 0x11, 0x1F, 0x11, 0x11, 0x11};
+    static const uint8_t D[7] = {0x1E, 0x11, 0x11, 0x11, 0x11, 0x11, 0x1E};
+    static const uint8_t E[7] = {0x1F, 0x10, 0x10, 0x1E, 0x10, 0x10, 0x1F};
+    static const uint8_t N[7] = {0x11, 0x19, 0x15, 0x13, 0x11, 0x11, 0x11};
+    static const uint8_t S[7] = {0x0F, 0x10, 0x10, 0x0E, 0x01, 0x01, 0x1E};
+    static const uint8_t U[7] = {0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x0E};
+
+    switch (c)
+    {
+        case 'A': return A;
+        case 'D': return D;
+        case 'E': return E;
+        case 'N': return N;
+        case 'S': return S;
+        case 'U': return U;
+        case ' ': return SPACE;
+        default: return SPACE;
+    }
+}
+
+static void edgeai_draw_char5x7_scaled(int32_t x, int32_t y, int32_t scale, char c, uint16_t color)
+{
+    const uint8_t *g = edgeai_glyph5x7(c);
+    if (scale < 1) scale = 1;
+
+    for (int32_t row = 0; row < 7; row++)
+    {
+        uint8_t bits = g[row];
+        for (int32_t col = 0; col < 5; col++)
+        {
+            if (bits & (1u << (4 - col)))
+            {
+                int32_t x0 = x + col * scale;
+                int32_t y0 = y + row * scale;
+                par_lcd_s035_fill_rect(x0, y0, x0 + scale - 1, y0 + scale - 1, color);
+            }
+        }
+    }
+}
+
+static void edgeai_draw_text5x7_scaled(int32_t x, int32_t y, int32_t scale, const char *s, uint16_t color)
+{
+    int32_t cx = x;
+    while (*s)
+    {
+        edgeai_draw_char5x7_scaled(cx, y, scale, *s, color);
+        cx += (5 + 1) * scale;
+        s++;
+    }
+}
+
+static int32_t edgeai_text5x7_w(int32_t scale, const char *s)
+{
+    int32_t n = 0;
+    while (s[n]) n++;
+    if (n == 0) return 0;
+    return n * (5 + 1) * scale - 1 * scale; /* last char doesn't need trailing space */
+}
+
+static void edgeai_draw_boot_title(void)
+{
+    const int32_t scale = 7;
+    const char *l1 = "SAND";
+    const char *l2 = "DUNE";
+
+    int32_t w1 = edgeai_text5x7_w(scale, l1);
+    int32_t w2 = edgeai_text5x7_w(scale, l2);
+    int32_t w = (w1 > w2) ? w1 : w2;
+    int32_t h = 2 * (7 * scale) + (2 * scale);
+
+    int32_t x = (LCD_W - w) / 2;
+    int32_t y = (LCD_H - h) / 2;
+
+    /* 3D effect: shadow first, then the bright face. */
+    const int32_t ox = 4;
+    const int32_t oy = 4;
+    const uint16_t shadow = 0x2104u; /* dark gray */
+    const uint16_t face = 0xFFDEu;   /* warm white */
+
+    edgeai_draw_text5x7_scaled(x + ox, y + oy, scale, l1, shadow);
+    edgeai_draw_text5x7_scaled(x + ox, y + oy + (7 * scale) + (2 * scale), scale, l2, shadow);
+    edgeai_draw_text5x7_scaled(x, y, scale, l1, face);
+    edgeai_draw_text5x7_scaled(x, y + (7 * scale) + (2 * scale), scale, l2, face);
+}
+
+static uint32_t edgeai_build_paint_path(edgeai_pt_t *pts, uint32_t cap,
+                                       int32_t minx, int32_t miny, int32_t maxx, int32_t maxy)
+{
+    const int32_t dx = 110;
+    const int32_t dy = 90;
+    uint32_t n = 0;
+    int row = 0;
+
+    for (int32_t y = miny; y <= maxy; y += dy, row++)
+    {
+        if ((row & 1) == 0)
+        {
+            for (int32_t x = minx; x <= maxx; x += dx)
+            {
+                if (n >= cap) return n;
+                pts[n++] = (edgeai_pt_t){(int16_t)x, (int16_t)y};
+            }
+        }
+        else
+        {
+            for (int32_t x = maxx; x >= minx; x -= dx)
+            {
+                if (n >= cap) return n;
+                pts[n++] = (edgeai_pt_t){(int16_t)x, (int16_t)y};
+            }
+        }
+    }
+
+    /* Ensure we end near the far corner so the last tiles get painted. */
+    if (n < cap)
+    {
+        pts[n++] = (edgeai_pt_t){(int16_t)maxx, (int16_t)maxy};
+    }
+    return n;
+}
+
+#if EDGEAI_RENDER_SINGLE_BLIT
+static void edgeai_render_full_dune(uint16_t *tile)
+{
+    for (int32_t y0 = 0; y0 < LCD_H; y0 += EDGEAI_TILE_MAX_H)
+    {
+        for (int32_t x0 = 0; x0 < LCD_W; x0 += EDGEAI_TILE_MAX_W)
+        {
+            int32_t w = LCD_W - x0;
+            int32_t h = LCD_H - y0;
+            if (w > EDGEAI_TILE_MAX_W) w = EDGEAI_TILE_MAX_W;
+            if (h > EDGEAI_TILE_MAX_H) h = EDGEAI_TILE_MAX_H;
+            int32_t x1 = x0 + w - 1;
+            int32_t y1 = y0 + h - 1;
+
+            sw_render_dune_bg(tile, (uint32_t)w, (uint32_t)h, x0, y0);
+            par_lcd_s035_blit_rect(x0, y0, x1, y1, tile);
+        }
+    }
+}
+#endif
+
 int main(void)
 {
     BOARD_InitHardware();
@@ -167,7 +323,8 @@ int main(void)
         /* Can't proceed without display in this demo. */
         for (;;) {}
     }
-    par_lcd_s035_fill(0x0000u); /* boot stays black (dune reveals as you roll) */
+    par_lcd_s035_fill(0x0000u);
+    edgeai_draw_boot_title();
 
     /* Print banner early; previous hangs made it hard to tell if firmware was alive. */
     PRINTF("EDGEAI: boot %s %s\r\n", __DATE__, __TIME__);
@@ -258,7 +415,7 @@ int main(void)
     uint32_t stats_frames = 0;
 
     /* Maximum dirty-rect size. Even in raster mode we clamp work per frame. */
-    enum { TILE_MAX_W = 200, TILE_MAX_H = 200 };
+    enum { TILE_MAX_W = EDGEAI_TILE_MAX_W, TILE_MAX_H = EDGEAI_TILE_MAX_H };
 #if EDGEAI_RENDER_SINGLE_BLIT
     /* Tile renderer (one LCD blit per frame to avoid tearing/flicker). */
     static uint16_t tile[TILE_MAX_W * TILE_MAX_H];
@@ -285,6 +442,23 @@ int main(void)
     int32_t sim_accum_q16 = 0;
     uint32_t render_accum_us = 0;
     const uint32_t render_period_us = 16667u; /* ~60 FPS */
+
+    /* Intro: show title, auto-paint the dune across the full screen, then hand off to tilt. */
+    typedef enum { EDGEAI_INTRO_TITLE = 0, EDGEAI_INTRO_PAINT = 1, EDGEAI_INTRO_NORMAL = 2 } edgeai_intro_t;
+    edgeai_intro_t intro = EDGEAI_INTRO_TITLE;
+    uint32_t intro_ms = 0;
+    bool intro_full_bg_done = false;
+
+    /* Use the max radius here so the "near" ball can't clip the screen edge. */
+    const int32_t minx = BALL_R_MAX + 2;
+    const int32_t miny = BALL_R_MAX + 2;
+    const int32_t maxx = (LCD_W - 1) - (BALL_R_MAX + 2);
+    const int32_t maxy = (LCD_H - 1) - (BALL_R_MAX + 2);
+
+    edgeai_pt_t paint_pts[80];
+    uint32_t paint_n = edgeai_build_paint_path(paint_pts, (uint32_t)(sizeof(paint_pts) / sizeof(paint_pts[0])),
+                                              minx, miny, maxx, maxy);
+    uint32_t paint_idx = 0;
 
     for (;;)
     {
@@ -330,6 +504,8 @@ int main(void)
         render_accum_us += dt_us;
         sim_accum_q16 += dt_q16;
 
+        intro_ms += dt_us / 1000u;
+
         int32_t ax = (int32_t)s.x;
         int32_t ay = (int32_t)s.y;
         map_accel_xy(&ax, &ay);
@@ -373,6 +549,57 @@ int main(void)
         int32_t ay_soft_q15 = (int32_t)(((int64_t)ay_n_q15 * alpha_q15 +
                                          (int64_t)ay_cu_q15 * ((1 << 15) - alpha_q15)) >> 15);
 
+        if (intro != EDGEAI_INTRO_NORMAL)
+        {
+            if ((intro == EDGEAI_INTRO_TITLE) && (intro_ms >= 1600u))
+            {
+                intro = EDGEAI_INTRO_PAINT;
+                intro_ms = 0;
+                paint_idx = 0;
+            }
+
+            if (intro == EDGEAI_INTRO_TITLE)
+            {
+                ax_soft_q15 = 0;
+                ay_soft_q15 = 0;
+            }
+            else if (intro == EDGEAI_INTRO_PAINT)
+            {
+                if (paint_idx >= paint_n)
+                {
+                    intro = EDGEAI_INTRO_NORMAL;
+                }
+                else
+                {
+                    /* Autopilot: PD controller to drive toward a serpentine grid of waypoints. */
+                    int32_t tx = (int32_t)paint_pts[paint_idx].x;
+                    int32_t ty = (int32_t)paint_pts[paint_idx].y;
+                    int32_t cx_now = x_q16 >> 16;
+                    int32_t cy_now = y_q16 >> 16;
+                    int32_t ex = tx - cx_now;
+                    int32_t ey = ty - cy_now;
+                    int32_t vx_px_s = vx_q16 >> 16;
+                    int32_t vy_px_s = vy_q16 >> 16;
+
+                    const int32_t a_px_s2 = 4200;
+                    int32_t ux = ex * 28 - vx_px_s * 85;
+                    int32_t uy = ey * 28 - vy_px_s * 85;
+                    ux = clamp_i32(ux, -a_px_s2, a_px_s2);
+                    uy = clamp_i32(uy, -a_px_s2, a_px_s2);
+
+                    ax_soft_q15 = (int32_t)(((int64_t)ux * 32767) / (int64_t)a_px_s2);
+                    ay_soft_q15 = (int32_t)(((int64_t)uy * 32767) / (int64_t)a_px_s2);
+
+                    /* Waypoint completion: close enough and slow enough. */
+                    if ((abs_i32(ex) <= 14) && (abs_i32(ey) <= 14) &&
+                        (abs_i32(vx_px_s) <= 12) && (abs_i32(vy_px_s) <= 12))
+                    {
+                        paint_idx++;
+                    }
+                }
+            }
+        }
+
         /* If accel read is failing, force a visible change so it doesn't look like
          * the demo is broken in a mysterious way.
          */
@@ -385,12 +612,6 @@ int main(void)
         /* soft_q15 * a_px_s2 gives Q15 px/s^2; convert to Q16 by <<1 */
         int32_t ax_a_q16 = (int32_t)(((int64_t)ax_soft_q15 * a_px_s2) << 1);
         int32_t ay_a_q16 = (int32_t)(((int64_t)ay_soft_q15 * a_px_s2) << 1);
-
-        /* Use the max radius here so the "near" ball can't clip the screen edge. */
-        const int32_t minx = BALL_R_MAX + 2;
-        const int32_t miny = BALL_R_MAX + 2;
-        const int32_t maxx = (LCD_W - 1) - (BALL_R_MAX + 2);
-        const int32_t maxy = (LCD_H - 1) - (BALL_R_MAX + 2);
 
         int iter = 0;
         while ((sim_accum_q16 >= sim_step_q16) && (iter < 6))
@@ -426,6 +647,15 @@ int main(void)
 
         if (do_render)
         {
+#if EDGEAI_RENDER_SINGLE_BLIT
+            if ((intro == EDGEAI_INTRO_NORMAL) && !intro_full_bg_done)
+            {
+                /* One-time sweep: guarantee no black regions remain after the intro paint. */
+                edgeai_render_full_dune(tile);
+                intro_full_bg_done = true;
+            }
+#endif
+
             /* The trail is a ring buffer; one point is "removed" each frame when we overwrite
              * the head slot. Include that removed point in the dirty rect so we clear it,
              * otherwise stale dots can remain on-screen.
