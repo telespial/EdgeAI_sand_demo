@@ -18,4 +18,8 @@ void par_lcd_s035_fill(uint16_t rgb565);
  *        larger values brighten pixels to show motion trails.
  * frame: monotonically increasing counter for animations/shimmer/dither.
  */
-void par_lcd_s035_render_grid(const sim_grid_t *grid, const uint8_t *trail, uint32_t frame);
+void par_lcd_s035_render_grid(const sim_grid_t *grid,
+                              const uint8_t *trail,
+                              uint32_t frame,
+                              int32_t ball_x_fp,
+                              int32_t ball_y_fp);

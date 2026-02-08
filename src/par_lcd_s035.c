@@ -200,7 +200,21 @@ static inline uint32_t hash32(uint32_t x)
     return x;
 }
 
-void par_lcd_s035_render_grid(const sim_grid_t *grid, const uint8_t *trail, uint32_t frame)
+static inline uint16_t mix_rgb565(uint16_t a, uint16_t b, uint8_t t /*0..255*/)
+{
+    int ar = (a >> 11) & 31, ag = (a >> 5) & 63, ab = a & 31;
+    int br = (b >> 11) & 31, bg = (b >> 5) & 63, bb = b & 31;
+    int r = (ar * (255 - t) + br * t) / 255;
+    int g = (ag * (255 - t) + bg * t) / 255;
+    int bl = (ab * (255 - t) + bb * t) / 255;
+    return (uint16_t)((r << 11) | (g << 5) | (bl << 0));
+}
+
+void par_lcd_s035_render_grid(const sim_grid_t *grid,
+                              const uint8_t *trail,
+                              uint32_t frame,
+                              int32_t ball_x_fp,
+                              int32_t ball_y_fp)
 {
     if (!grid || !grid->cells || grid->w == 0 || grid->h == 0)
     {
@@ -209,15 +223,22 @@ void par_lcd_s035_render_grid(const sim_grid_t *grid, const uint8_t *trail, uint
 
     static uint16_t line[EDGEAI_LCD_WIDTH];
 
+    /* Ball center in LCD pixels (derived from sim fixed-point coordinates). */
+    int32_t ball_x_px = (int32_t)(((int64_t)ball_x_fp * EDGEAI_LCD_WIDTH) / ((int64_t)grid->w * 256));
+    int32_t ball_y_px = (int32_t)(((int64_t)ball_y_fp * EDGEAI_LCD_HEIGHT) / ((int64_t)grid->h * 256));
+    const int32_t ball_r_px = 22; /* looks decent on 480x320 */
+    const int32_t ball_r2 = ball_r_px * ball_r_px;
+
     for (uint32_t y = 0; y < EDGEAI_LCD_HEIGHT; y++)
     {
-        uint32_t sy = (y * (uint32_t)grid->h) / EDGEAI_LCD_HEIGHT;
+        /* Fast path: 240x160 -> 480x320 is exact 2x scaling. */
+        uint32_t sy = (grid->w == 240u && grid->h == 160u) ? (y >> 1) : (y * (uint32_t)grid->h) / EDGEAI_LCD_HEIGHT;
         if (sy >= grid->h) sy = grid->h - 1u;
 
         const uint8_t *row = &grid->cells[sy * (uint32_t)grid->w];
         for (uint32_t x = 0; x < EDGEAI_LCD_WIDTH; x++)
         {
-            uint32_t sx = (x * (uint32_t)grid->w) / EDGEAI_LCD_WIDTH;
+            uint32_t sx = (grid->w == 240u && grid->h == 160u) ? (x >> 1) : (x * (uint32_t)grid->w) / EDGEAI_LCD_WIDTH;
             if (sx >= grid->w) sx = grid->w - 1u;
             uint8_t m = row[sx];
             uint16_t c = mat_to_rgb565(m);
@@ -270,14 +291,78 @@ void par_lcd_s035_render_grid(const sim_grid_t *grid, const uint8_t *trail, uint
                 if (t)
                 {
                     int boost = (int)(t >> 5); /* 0..7 */
-                    c = rgb565_add(c, boost, boost * 2, boost);
+                    /* tint trails slightly towards white/cyan */
+                    c = rgb565_add(c, boost + 1, boost * 3, boost + 2);
                 }
             }
 
             line[x] = c;
         }
 
+        /* Glass-ball overlay (line-local). */
+        if (ball_x_fp || ball_y_fp)
+        {
+            int32_t dy = (int32_t)y - ball_y_px;
+            int32_t dy2 = dy * dy;
+            if (dy2 <= ball_r2)
+            {
+                int32_t dx_max = 0;
+                /* integer sqrt approx via linear scan (radius small) */
+                for (int32_t dx = 0; dx <= ball_r_px; dx++)
+                {
+                    if (dx * dx + dy2 > ball_r2)
+                    {
+                        dx_max = dx - 1;
+                        break;
+                    }
+                    dx_max = dx;
+                }
+
+                int32_t x0 = ball_x_px - dx_max;
+                int32_t x1 = ball_x_px + dx_max;
+                if (x0 < 0) x0 = 0;
+                if (x1 >= (int32_t)EDGEAI_LCD_WIDTH) x1 = (int32_t)EDGEAI_LCD_WIDTH - 1;
+
+                for (int32_t xx = x0; xx <= x1; xx++)
+                {
+                    int32_t dx = xx - ball_x_px;
+                    int32_t d2 = dx * dx + dy2;
+                    if (d2 > ball_r2) continue;
+
+                    /* Normalized depth (0..255), 255 at center. */
+                    uint8_t depth = (uint8_t)((uint32_t)(ball_r2 - d2) * 255u / (uint32_t)ball_r2);
+
+                    /* Faux refraction: sample a nearby pixel along the normal. */
+                    int32_t shift = (dx / 6);
+                    int32_t sx = xx + shift;
+                    if (sx < 0) sx = 0;
+                    if (sx >= (int32_t)EDGEAI_LCD_WIDTH) sx = (int32_t)EDGEAI_LCD_WIDTH - 1;
+
+                    uint16_t base = line[xx];
+                    uint16_t refr = line[sx];
+                    uint16_t mixed = mix_rgb565(base, refr, (uint8_t)(60u + (depth >> 2)));
+
+                    /* Specular highlight (upper-left). */
+                    int32_t hl = (-(dx + dy) + ball_r_px) * 2;
+                    if (hl < 0) hl = 0;
+                    if (hl > 40) hl = 40;
+
+                    mixed = rgb565_add(mixed, hl / 10, hl / 5, hl / 10);
+
+                    /* Rim light */
+                    if (depth < 40u)
+                    {
+                        mixed = rgb565_add(mixed, 2, 4, 6);
+                    }
+
+                    line[xx] = mixed;
+                }
+            }
+        }
+
+#if defined(CONFIG_EDGEAI_USE_POSTFX) && (CONFIG_EDGEAI_USE_POSTFX == 1)
         postfx_apply_line_rgb565(line, EDGEAI_LCD_WIDTH, y, frame);
+#endif
 
         ST7796S_SelectArea(&s_lcdHandle, 0, (uint16_t)y, EDGEAI_LCD_WIDTH - 1u, (uint16_t)y);
         s_memWriteDone = false;

@@ -16,6 +16,9 @@
 #include "fsl_lpi2c.h"
 #include "pin_mux.h"
 
+#define SIM_W 240u
+#define SIM_H 160u
+
 #ifndef EDGEAI_I2C
 #define EDGEAI_I2C LPI2C3
 #endif
@@ -106,33 +109,51 @@ static grav_dir_t grav_from_sample(const fxls8974_sample_t *s)
     return GRAV_E;
 }
 
+static void map_accel_xy(int32_t *ax, int32_t *ay)
+{
+    if (!ax || !ay) return;
+#if EDGEAI_ACCEL_SWAP_XY
+    int32_t tmp = *ax; *ax = *ay; *ay = tmp;
+#endif
+#if EDGEAI_ACCEL_INVERT_X
+    *ax = -*ax;
+#endif
+#if EDGEAI_ACCEL_INVERT_Y
+    *ay = -*ay;
+#endif
+}
+
 static void seed_world(sim_grid_t *g)
 {
     sim_clear(g);
-    // Floor
-    for (uint16_t x = 0; x < g->w; x++)
+
+    /* "Screen covered in sand": mostly sand with a small amount of air so it can move. */
+    for (uint16_t y = 0; y < g->h; y++)
     {
-        sim_set(g, x, g->h - 1, MAT_METAL);
-    }
-    // Sand pile
-    for (uint16_t y = 10; y < 40; y++)
-    {
-        for (uint16_t x = 50; x < 80; x++)
+        for (uint16_t x = 0; x < g->w; x++)
         {
-            sim_set(g, x, y, MAT_SAND);
-        }
-    }
-    // Water blob
-    for (uint16_t y = 10; y < 30; y++)
-    {
-        for (uint16_t x = 90; x < 120; x++)
-        {
-            sim_set(g, x, y, MAT_WATER);
+            material_t m = MAT_SAND;
+            if (y < 6) m = MAT_EMPTY; /* thin air pocket at top */
+
+            /* sprinkle a few holes so things can flow */
+            uint32_t h = (uint32_t)(x * 1103515245u + y * 12345u);
+            if ((h & 0xFFu) < 6u) m = MAT_EMPTY;
+
+            sim_set(g, x, y, m);
         }
     }
 
-    // Metal ball seed (single-cell for now).
-    sim_set(g, 30, 20, MAT_BALL);
+    /* Metal frame. */
+    for (uint16_t x = 0; x < g->w; x++)
+    {
+        sim_set(g, x, 0, MAT_METAL);
+        sim_set(g, x, g->h - 1, MAT_METAL);
+    }
+    for (uint16_t y = 0; y < g->h; y++)
+    {
+        sim_set(g, 0, y, MAT_METAL);
+        sim_set(g, g->w - 1, y, MAT_METAL);
+    }
 }
 
 int main(void)
@@ -188,8 +209,8 @@ int main(void)
     }
     par_lcd_s035_fill(0x0000u);
 
-    static uint8_t cells[160u * 120u];
-    sim_grid_t grid = {.w = 160, .h = 120, .cells = cells};
+    static uint8_t cells[SIM_W * SIM_H];
+    sim_grid_t grid = {.w = SIM_W, .h = SIM_H, .cells = cells};
     sim_rng_t rng;
     sim_rng_seed(&rng, 0xC0DEF00Du);
     seed_world(&grid);
@@ -198,46 +219,58 @@ int main(void)
     uint32_t tick = 0;
 
     /* Motion trail state at sim resolution. */
-    static uint8_t prev_cells[160u * 120u];
-    static uint8_t trails[160u * 120u];
+    static uint8_t prev_cells[SIM_W * SIM_H];
+    static uint8_t trails[SIM_W * SIM_H];
     memcpy(prev_cells, grid.cells, sizeof(prev_cells));
 
     /* Ball state (single cell, fixed-point 24.8). */
-    int32_t ball_x_fp = 30 << 8;
-    int32_t ball_y_fp = 20 << 8;
+    int32_t ball_x_fp = (int32_t)(SIM_W / 2u) << 8;
+    int32_t ball_y_fp = (int32_t)(SIM_H / 2u) << 8;
     int32_t ball_vx_fp = 0;
     int32_t ball_vy_fp = 0;
-    uint16_t ball_x = 30;
-    uint16_t ball_y = 20;
+    uint16_t ball_x = SIM_W / 2u;
+    uint16_t ball_y = SIM_H / 2u;
+
+    /* Shake detection */
+    int32_t ax_lp = 0, ay_lp = 0, az_lp = 0;
+    uint8_t shake_hold = 0;
 
     for (;;)
     {
         if (fxls8974_read_sample_12b(&dev, &s))
         {
+            int32_t axm = (int32_t)s.x;
+            int32_t aym = (int32_t)s.y;
+            int32_t azm = (int32_t)s.z;
+            map_accel_xy(&axm, &aym);
+
+            /* Low-pass filter and shake metric (jerk-like). */
+            ax_lp += (axm - ax_lp) >> 3;
+            ay_lp += (aym - ay_lp) >> 3;
+            az_lp += (azm - az_lp) >> 3;
+            int32_t shake = (axm > ax_lp ? axm - ax_lp : ax_lp - axm) +
+                            (aym > ay_lp ? aym - ay_lp : ay_lp - aym) +
+                            (azm > az_lp ? azm - az_lp : az_lp - azm);
+            if (shake > 900)
+            {
+                shake_hold = 20;
+            }
+            if (shake_hold)
+            {
+                shake_hold--;
+                memset(trails, 0, sizeof(trails));
+            }
+
             grav_dir_t g = grav_from_sample(&s);
             sim_step(&grid, g, &rng);
             sim_step(&grid, g, &rng);
 
             /* Ball "physics": inertia + swaps with sand/water; bounces off metal/bounds. */
             {
-                int gx = 0, gy = 1;
-                switch (g)
-                {
-                    case GRAV_N:  gx = 0;  gy = -1; break;
-                    case GRAV_NE: gx = 1;  gy = -1; break;
-                    case GRAV_E:  gx = 1;  gy = 0;  break;
-                    case GRAV_SE: gx = 1;  gy = 1;  break;
-                    case GRAV_S:  gx = 0;  gy = 1;  break;
-                    case GRAV_SW: gx = -1; gy = 1;  break;
-                    case GRAV_W:  gx = -1; gy = 0;  break;
-                    case GRAV_NW: gx = -1; gy = -1; break;
-                    default: break;
-                }
-
-                /* Acceleration strength in fp units. */
-                const int32_t accel = 18;
-                ball_vx_fp += gx * accel;
-                ball_vy_fp += gy * accel;
+                /* Use mapped accel directly for smoother "rolling". */
+                const int32_t accel_scale = 3; /* tune */
+                ball_vx_fp += (axm / 64) * accel_scale;
+                ball_vy_fp += (aym / 64) * accel_scale;
 
                 /* Damping. */
                 ball_vx_fp = (ball_vx_fp * 245) >> 8;
@@ -270,9 +303,7 @@ int main(void)
                     }
                     else
                     {
-                        /* Swap into destination; leave displaced material behind. */
-                        sim_set(&grid, ball_x, ball_y, dst);
-                        sim_set(&grid, nx, ny, MAT_BALL);
+                        /* Ball is rendered as an overlay; do not modify the world cell types. */
                         ball_x = nx;
                         ball_y = ny;
                         ball_x_fp = nx_fp;
@@ -284,19 +315,26 @@ int main(void)
             /* Render at a lower cadence than sim updates. */
             if ((tick % 4u) == 0u)
             {
-                /* Update trails (decay + stamp changed cells). */
+                /* Update trails (ball-only; shake clears it). */
                 for (uint32_t i = 0; i < (uint32_t)grid.w * (uint32_t)grid.h; i++)
                 {
                     uint8_t t = trails[i];
                     trails[i] = (t > 8u) ? (uint8_t)(t - 8u) : 0u;
-                    if (grid.cells[i] != prev_cells[i])
-                    {
-                        trails[i] = 200u;
-                        prev_cells[i] = grid.cells[i];
-                    }
+                    prev_cells[i] = grid.cells[i];
                 }
 
-                par_lcd_s035_render_grid(&grid, trails, tick);
+                /* Stamp a glowing trail. */
+                uint32_t bi = (uint32_t)ball_y * (uint32_t)grid.w + (uint32_t)ball_x;
+                if (bi < (uint32_t)grid.w * (uint32_t)grid.h)
+                {
+                    trails[bi] = 255u;
+                    if (ball_x > 0) trails[bi - 1] = 180u;
+                    if (ball_x + 1 < grid.w) trails[bi + 1] = 180u;
+                    if (ball_y > 0) trails[bi - grid.w] = 140u;
+                    if (ball_y + 1 < grid.h) trails[bi + grid.w] = 140u;
+                }
+
+                par_lcd_s035_render_grid(&grid, trails, tick, ball_x_fp, ball_y_fp);
             }
 
             if ((tick++ % 60u) == 0u)
