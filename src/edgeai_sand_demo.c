@@ -42,6 +42,11 @@
 #define EDGEAI_I2C LPI2C3
 #endif
 
+/* NPU: keep init enabled, but inference can be disabled if it blocks on a given setup. */
+#ifndef EDGEAI_ENABLE_NPU_INFERENCE
+#define EDGEAI_ENABLE_NPU_INFERENCE 0
+#endif
+
 /* Rendering mode:
  * - 0: "raster/flicker" mode: draw primitives directly to LCD using many small writes
  *      (visually interesting but can show tearing/shutter lines).
@@ -211,9 +216,10 @@ int main(void)
 #endif
 
     /* Boot banner: keep it short and printf-lite compatible (avoid %ld). */
-    PRINTF("EDGEAI: tilt-ball fw %s %s (npu=%u render=%s)\r\n",
+    PRINTF("EDGEAI: tilt-ball fw %s %s (npu_init=%u npu_run=%u render=%s)\r\n",
            __DATE__, __TIME__,
            (unsigned)(npu_ok ? 1u : 0u),
+           (unsigned)(EDGEAI_ENABLE_NPU_INFERENCE ? 1u : 0u),
            (EDGEAI_RENDER_SINGLE_BLIT ? "blit" : "raster"));
 
     /* Some MCXN947 configurations (or secure setups) can leave DWT->CYCCNT not advancing,
@@ -426,7 +432,7 @@ int main(void)
         }
 
         /* NPU hook: run a Neutron-backed TFLM model at a low rate and use output to modulate "glint". */
-        if (npu_ok && (npu_accum_us >= 200000u))
+        if (EDGEAI_ENABLE_NPU_INFERENCE && npu_ok && (npu_accum_us >= 200000u))
         {
             npu_accum_us = 0;
 
