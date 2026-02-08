@@ -28,7 +28,8 @@ WS_DIR="$PWD/mcuxsdk_ws_test" ./tools/flash_frdmmcxn947.sh
 
 ### 2026-02-08 Boot Title + Auto-Paint (No Black Boot)
 - Tag: `milestone_boot_title_autopaint_v1`
-- Commit: `444417658fc5d732eba156eb9282ea97acd2d26d`
+- Lock tag: `LOCK_milestone_boot_title_autopaint_v1_20eb628` (includes SHA in name; do not move)
+- Commit: `20eb6281bcfae333d30fb0bd7d8b90dba5c1fdb0`
 - Hardware: FRDM-MCXN947 + PAR-LCD-S035 + Accel 4 Click (FXLS8974CF over mikroBUS/I2C)
 - Behavior: on boot, draws a large centered 3D title; then the ball autonomously rolls a serpentine pattern to paint the dune across the full screen; then hands control to the tilt sensor for normal operation.
 - Notes: keep `GOLDEN_2026-02-08_v9` as the rollback anchor even if this entry becomes the preferred boot experience.
