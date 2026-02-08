@@ -459,6 +459,7 @@ int main(void)
     uint32_t paint_n = edgeai_build_paint_path(paint_pts, (uint32_t)(sizeof(paint_pts) / sizeof(paint_pts[0])),
                                               minx, miny, maxx, maxy);
     uint32_t paint_idx = 0;
+    bool paint_setup_done = false;
 
     for (;;)
     {
@@ -556,6 +557,7 @@ int main(void)
                 intro = EDGEAI_INTRO_PAINT;
                 intro_ms = 0;
                 paint_idx = 0;
+                paint_setup_done = false;
             }
 
             if (intro == EDGEAI_INTRO_TITLE)
@@ -565,8 +567,36 @@ int main(void)
             }
             else if (intro == EDGEAI_INTRO_PAINT)
             {
+                if (!paint_setup_done)
+                {
+                    /* Transition effect:
+                     * 1) wipe the title back to black
+                     * 2) "spawn" the ball at the first waypoint so it's immediately visible
+                     * 3) render immediately so the ball starts painting right away
+                     */
+                    par_lcd_s035_fill(0x0000u);
+                    int32_t sx = (paint_n > 0) ? (int32_t)paint_pts[0].x : (LCD_W / 2);
+                    int32_t sy = (paint_n > 0) ? (int32_t)paint_pts[0].y : (LCD_H / 2);
+                    x_q16 = sx << 16;
+                    y_q16 = sy << 16;
+                    vx_q16 = 0;
+                    vy_q16 = 0;
+                    prev_x = sx;
+                    prev_y = sy;
+                    for (int i = 0; i < TRAIL_N; i++) { trail_x[i] = (int16_t)sx; trail_y[i] = (int16_t)sy; }
+                    trail_head = 0;
+                    render_accum_us = render_period_us;
+                    intro_full_bg_done = false;
+                    paint_setup_done = true;
+                }
+
                 if (paint_idx >= paint_n)
                 {
+#if EDGEAI_RENDER_SINGLE_BLIT
+                    /* Finalize: guarantee background is fully painted before enabling tilt. */
+                    edgeai_render_full_dune(tile);
+#endif
+                    intro_full_bg_done = true;
                     intro = EDGEAI_INTRO_NORMAL;
                 }
                 else
@@ -643,7 +673,7 @@ int main(void)
         int32_t r_draw = edgeai_ball_r_for_y(cy);
 
         bool do_render = (render_accum_us >= render_period_us);
-        if (do_render) render_accum_us = 0;
+        if (do_render && (intro != EDGEAI_INTRO_TITLE)) render_accum_us = 0;
 
         if (do_render)
         {
