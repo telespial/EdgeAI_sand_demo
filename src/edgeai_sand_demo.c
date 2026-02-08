@@ -198,6 +198,7 @@ int main(void)
     uint32_t last_cyc = DWT->CYCCNT;
     uint32_t frame = 0;
     uint8_t glint = 0;
+    uint32_t accel_fail = 0;
     uint32_t npu_accum_us = 0;
     uint32_t stats_accum_us = 0;
     uint32_t stats_frames = 0;
@@ -218,9 +219,20 @@ int main(void)
 
     for (;;)
     {
-        if (!fxls8974_read_sample_12b(&dev, &s))
+        bool accel_ok = fxls8974_read_sample_12b(&dev, &s);
+        if (!accel_ok)
         {
-            continue;
+            /* Keep the render loop alive even if I2C glitches; this prevents the
+             * display from appearing "frozen" without any indication why.
+             */
+            accel_fail++;
+            s.x = 0;
+            s.y = 0;
+            s.z = 0;
+        }
+        else
+        {
+            accel_fail = 0;
         }
 
         uint32_t now = DWT->CYCCNT;
@@ -257,6 +269,11 @@ int main(void)
         /* Deadzone to avoid jitter when the board is nearly flat. */
         if (abs_i32(ax_lp) < 6) ax_lp = 0;
         if (abs_i32(ay_lp) < 6) ay_lp = 0;
+
+        /* If accel read is failing, force a visible change so it doesn't look like
+         * the demo is broken in a mysterious way.
+         */
+        uint16_t bg = (accel_fail > 0) ? 0x1800u /* dark red */ : 0x0000u;
 
         /* Physics: treat accel as "gravity" and integrate velocity/position. */
         const int32_t a_px_s2 = 2400; /* px/s^2 at ~1g (more responsive) */
@@ -354,7 +371,7 @@ int main(void)
         /* "Raster" mode: draw directly to LCD using multiple operations.
          * This is intentionally not a single-blit path; it can show tearing/raster lines.
          */
-        par_lcd_s035_fill_rect(x0, y0, x1, y1, 0x0000u);
+        par_lcd_s035_fill_rect(x0, y0, x1, y1, bg);
 
         for (int i = 0; i < TRAIL_N; i++)
         {
