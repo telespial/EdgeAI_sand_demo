@@ -52,4 +52,7 @@ echo "[setup] installing edgeai_sand_demo wrapper into mcuxsdk/examples"
   MCUX_EXAMPLES_DIR="$WS_DIR/mcuxsdk/examples" ./sdk_example/install_mcux_overlay.sh
 )
 
+echo "[setup] applying workspace patches"
+"$ROOT_DIR/tools/patch_mcuxsdk.sh" "$WS_DIR"
+
 echo "[setup] done"

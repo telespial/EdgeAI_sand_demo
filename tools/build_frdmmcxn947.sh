@@ -14,6 +14,8 @@ if [[ ! -d "$WS_DIR/.west" ]]; then
   exit 1
 fi
 
+"$ROOT_DIR/tools/patch_mcuxsdk.sh" "$WS_DIR"
+
 (
   cd "$WS_DIR"
   west build -p always mcuxsdk/examples/demo_apps/edgeai_sand_demo \
@@ -24,4 +26,3 @@ fi
 )
 
 echo "Built: $WS_DIR/build/edgeai_sand_demo_cm33_core0.bin"
-

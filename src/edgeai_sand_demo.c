@@ -6,7 +6,8 @@
 #include "accel4_click.h"
 #include "fxls8974cf.h"
 #include "par_lcd_s035.h"
-#include "sim.h"
+#include "sw_render.h"
+#include "npu/model.h"
 
 #include "app.h"
 #include "board.h"
@@ -16,34 +17,33 @@
 #include "fsl_lpi2c.h"
 #include "pin_mux.h"
 
-#define SIM_W 240u
-#define SIM_H 160u
+#define LCD_W 480
+#define LCD_H 320
 
-#define BALL_ACCEL_SCALE 12   /* responsiveness; higher = faster roll */
-#define BALL_DAMP_NUM    250  /* 0..255, higher = less damping */
+#define BALL_R 20
+
+/* Empirically, the raw 12-bit output here is roughly on the order of ~512 counts per 1g
+ * at the current FXLS8974 config. We use this as the full-scale tilt mapping value.
+ */
+#define ACCEL_MAP_DENOM 512
+
+/* Accel axis mapping (adjust if needed). */
+#ifndef EDGEAI_ACCEL_SWAP_XY
+#define EDGEAI_ACCEL_SWAP_XY 1
+#endif
+#ifndef EDGEAI_ACCEL_INVERT_X
+#define EDGEAI_ACCEL_INVERT_X 0
+#endif
+#ifndef EDGEAI_ACCEL_INVERT_Y
+#define EDGEAI_ACCEL_INVERT_Y 0
+#endif
 
 #ifndef EDGEAI_I2C
 #define EDGEAI_I2C LPI2C3
 #endif
 
-/* Accel axis mapping.
- * If tilt directions feel wrong, adjust these and reflash.
- *
- * Current default fixes common "left/right inverted" mounting.
- */
-#ifndef EDGEAI_ACCEL_SWAP_XY
-#define EDGEAI_ACCEL_SWAP_XY 1
-#endif
-#ifndef EDGEAI_ACCEL_INVERT_X
-#define EDGEAI_ACCEL_INVERT_X 1
-#endif
-#ifndef EDGEAI_ACCEL_INVERT_Y
-#define EDGEAI_ACCEL_INVERT_Y 1
-#endif
-
 static uint32_t edgeai_i2c_get_freq(void)
 {
-    // FC3 I2C is wired to mikroBUS on FRDM-MCXN947 (see docs/HARDWARE.md).
     return CLOCK_GetLPFlexCommClkFreq(3u);
 }
 
@@ -75,43 +75,6 @@ static bool edgeai_i2c_read(uint8_t addr7, uint8_t reg, uint8_t *data, uint32_t 
     return (LPI2C_MasterTransferBlocking(EDGEAI_I2C, &xfer) == kStatus_Success);
 }
 
-static grav_dir_t grav_from_sample(const fxls8974_sample_t *s)
-{
-    // Very simple 8-way mapping from (x,y). Adjust signs based on your physical mounting.
-    int32_t ax = s->x;
-    int32_t ay = s->y;
-
-#if EDGEAI_ACCEL_SWAP_XY
-    int32_t tmp = ax; ax = ay; ay = tmp;
-#endif
-#if EDGEAI_ACCEL_INVERT_X
-    ax = -ax;
-#endif
-#if EDGEAI_ACCEL_INVERT_Y
-    ay = -ay;
-#endif
-
-    const int32_t dead = 256; // rough deadzone in raw 12-bit units
-    if ((ax > -dead) && (ax < dead) && (ay > -dead) && (ay < dead))
-    {
-        return GRAV_S;
-    }
-
-    bool right = ax > dead;
-    bool left = ax < -dead;
-    bool down = ay > dead;
-    bool up = ay < -dead;
-
-    if (up && right) return GRAV_NE;
-    if (up && left) return GRAV_NW;
-    if (down && right) return GRAV_SE;
-    if (down && left) return GRAV_SW;
-    if (up) return GRAV_N;
-    if (down) return GRAV_S;
-    if (left) return GRAV_W;
-    return GRAV_E;
-}
-
 static void map_accel_xy(int32_t *ax, int32_t *ay)
 {
     if (!ax || !ay) return;
@@ -126,44 +89,28 @@ static void map_accel_xy(int32_t *ax, int32_t *ay)
 #endif
 }
 
-static void seed_world(sim_grid_t *g)
+static int32_t clamp_i32(int32_t v, int32_t lo, int32_t hi)
 {
-    sim_clear(g);
-
-    /* "Screen covered in sand": mostly sand with a small amount of air so it can move. */
-    for (uint16_t y = 0; y < g->h; y++)
-    {
-        for (uint16_t x = 0; x < g->w; x++)
-        {
-            material_t m = MAT_SAND;
-            if (y < 6) m = MAT_EMPTY; /* thin air pocket at top */
-
-            /* sprinkle a few holes so things can flow */
-            uint32_t h = (uint32_t)(x * 1103515245u + y * 12345u);
-            if ((h & 0xFFu) < 6u) m = MAT_EMPTY;
-
-            sim_set(g, x, y, m);
-        }
-    }
-
-    /* Metal frame. */
-    for (uint16_t x = 0; x < g->w; x++)
-    {
-        sim_set(g, x, 0, MAT_METAL);
-        sim_set(g, x, g->h - 1, MAT_METAL);
-    }
-    for (uint16_t y = 0; y < g->h; y++)
-    {
-        sim_set(g, 0, y, MAT_METAL);
-        sim_set(g, g->w - 1, y, MAT_METAL);
-    }
+    if (v < lo) return lo;
+    if (v > hi) return hi;
+    return v;
 }
+
+static void dwt_cycle_counter_init(void)
+{
+    CoreDebug->DEMCR |= CoreDebug_DEMCR_TRCENA_Msk;
+    DWT->CYCCNT = 0;
+    DWT->CTRL |= DWT_CTRL_CYCCNTENA_Msk;
+}
+
+static int32_t abs_i32(int32_t v) { return (v < 0) ? -v : v; }
 
 int main(void)
 {
     BOARD_InitHardware();
+    dwt_cycle_counter_init();
 
-    // Init I2C3 (FC3 pins).
+    /* Init I2C for the accel (mikroBUS). */
     lpi2c_master_config_t masterCfg;
     LPI2C_MasterGetDefaultConfig(&masterCfg);
     masterCfg.baudRate_Hz = 400000u;
@@ -187,18 +134,11 @@ int main(void)
             break;
         }
     }
-
     if (!found)
     {
-        PRINTF("FXLS8974CF not found on I2C (tried 0x18/0x19). WHO_AM_I=0x%02x\r\n", who);
-        for (;;)
-        {
-        }
+        PRINTF("FXLS8974CF not found (WHO_AM_I=0x%02x)\r\n", who);
+        for (;;) {}
     }
-
-    PRINTF("FXLS8974CF found at 0x%02x (WHO_AM_I=0x%02x)\r\n", dev.addr7, who);
-
-    // Minimal configuration: set FSR and enable ACTIVE.
     (void)fxls8974_set_active(&dev, false);
     (void)fxls8974_set_fsr(&dev, FXLS8974_FSR_4G);
     (void)fxls8974_set_active(&dev, true);
@@ -206,149 +146,273 @@ int main(void)
     if (!par_lcd_s035_init())
     {
         PRINTF("LCD init failed\r\n");
-        for (;;)
-        {
-        }
+        for (;;) {}
     }
+
     par_lcd_s035_fill(0x0000u);
 
-    static uint8_t cells[SIM_W * SIM_H];
-    sim_grid_t grid = {.w = SIM_W, .h = SIM_H, .cells = cells};
-    sim_rng_t rng;
-    sim_rng_seed(&rng, 0xC0DEF00Du);
-    seed_world(&grid);
+    bool npu_ok = (EDGEAI_MODEL_Init() == kStatus_Success);
+    edgeai_tensor_dims_t in_dims = {0};
+    edgeai_tensor_type_t in_type = kEdgeAiTensorType_UINT8;
+    uint8_t *in_data = NULL;
+    edgeai_tensor_dims_t out_dims = {0};
+    edgeai_tensor_type_t out_type = kEdgeAiTensorType_UINT8;
+    uint8_t *out_data = NULL;
+    if (npu_ok)
+    {
+        in_data = EDGEAI_MODEL_GetInputTensorData(&in_dims, &in_type);
+        out_data = EDGEAI_MODEL_GetOutputTensorData(&out_dims, &out_type);
+        npu_ok = (in_data != NULL) && (out_data != NULL);
+    }
+
+    /* Ball state (Q16.16 pixels). */
+    int32_t x_q16 = (LCD_W / 2) << 16;
+    int32_t y_q16 = (LCD_H / 2) << 16;
+    int32_t vx_q16 = 0;
+    int32_t vy_q16 = 0;
+    int32_t prev_x = LCD_W / 2;
+    int32_t prev_y = LCD_H / 2;
+
+    /* Simple trail. */
+    enum { TRAIL_N = 12 };
+    int16_t trail_x[TRAIL_N];
+    int16_t trail_y[TRAIL_N];
+    for (int i = 0; i < TRAIL_N; i++) { trail_x[i] = (int16_t)prev_x; trail_y[i] = (int16_t)prev_y; }
+    uint32_t trail_head = 0;
+
+    /* Simple low-pass on accel; we map tilt directly to screen position. */
+    int32_t ax_lp = 0;
+    int32_t ay_lp = 0;
 
     fxls8974_sample_t s = {0};
-    uint32_t tick = 0;
+    uint32_t last_cyc = DWT->CYCCNT;
+    uint32_t frame = 0;
+    uint8_t glint = 0;
+    uint32_t npu_accum_us = 0;
+    uint32_t stats_accum_us = 0;
+    uint32_t stats_frames = 0;
 
-    /* Motion trail state at sim resolution. */
-    static uint8_t prev_cells[SIM_W * SIM_H];
-    static uint8_t trails[SIM_W * SIM_H];
-    memcpy(prev_cells, grid.cells, sizeof(prev_cells));
+    /* Tile renderer (one LCD blit per frame to avoid tearing/flicker). */
+    enum { TILE_MAX_W = 200, TILE_MAX_H = 200 };
+    static uint16_t tile[TILE_MAX_W * TILE_MAX_H];
 
-    /* Ball state (single cell, fixed-point 24.8). */
-    int32_t ball_x_fp = (int32_t)(SIM_W / 2u) << 8;
-    int32_t ball_y_fp = (int32_t)(SIM_H / 2u) << 8;
-    int32_t ball_vx_fp = 0;
-    int32_t ball_vy_fp = 0;
-    uint16_t ball_x = SIM_W / 2u;
-    uint16_t ball_y = SIM_H / 2u;
-
-    /* Shake detection */
-    int32_t ax_lp = 0, ay_lp = 0, az_lp = 0;
-    uint8_t shake_hold = 0;
+    /* Some MCXN947 configurations (or secure setups) can leave DWT->CYCCNT not advancing,
+     * which makes dt==0 and "freezes" all motion. Keep a fixed timestep fallback so
+     * the demo always behaves predictably.
+     */
+    const int32_t dt_fallback_q16 = (int32_t)((1u << 16) / 60u); /* ~16.67ms */
+    const uint32_t dt_fallback_us = 16667u;
 
     for (;;)
     {
-        if (fxls8974_read_sample_12b(&dev, &s))
+        if (!fxls8974_read_sample_12b(&dev, &s))
         {
-            int32_t axm = (int32_t)s.x;
-            int32_t aym = (int32_t)s.y;
-            int32_t azm = (int32_t)s.z;
-            map_accel_xy(&axm, &aym);
+            continue;
+        }
 
-            /* Low-pass filter and shake metric (jerk-like). */
-            ax_lp += (axm - ax_lp) >> 3;
-            ay_lp += (aym - ay_lp) >> 3;
-            az_lp += (azm - az_lp) >> 3;
-            int32_t shake = (axm > ax_lp ? axm - ax_lp : ax_lp - axm) +
-                            (aym > ay_lp ? aym - ay_lp : ay_lp - aym) +
-                            (azm > az_lp ? azm - az_lp : az_lp - azm);
-            if (shake > 900)
+        uint32_t now = DWT->CYCCNT;
+        uint32_t dc = now - last_cyc;
+        last_cyc = now;
+        uint32_t cps = SystemCoreClock ? SystemCoreClock : 150000000u;
+
+        /* dt in Q16 seconds */
+        int32_t dt_q16 = dt_fallback_q16;
+        uint32_t dt_us = dt_fallback_us;
+        if ((dc != 0u) && (cps != 0u))
+        {
+            dt_q16 = (int32_t)(((uint64_t)dc << 16) / (uint64_t)cps);
+            dt_us = (uint32_t)(((uint64_t)dc * 1000000u) / (uint64_t)cps);
+            if (dt_q16 <= 0) dt_q16 = dt_fallback_q16;
+            if (dt_us == 0u) dt_us = dt_fallback_us;
+        }
+
+        if (dt_q16 > (int32_t)(1u << 16)) dt_q16 = (int32_t)(1u << 16);
+        npu_accum_us += dt_us;
+        stats_accum_us += dt_us;
+
+        int32_t ax = (int32_t)s.x;
+        int32_t ay = (int32_t)s.y;
+        map_accel_xy(&ax, &ay);
+
+        ax_lp += (ax - ax_lp) >> 3;
+        ay_lp += (ay - ay_lp) >> 3;
+
+        /* Raw 12b is roughly ~512 counts / 1g at our current mode. Clamp to avoid crazy jumps. */
+        ax_lp = clamp_i32(ax_lp, -ACCEL_MAP_DENOM * 2, ACCEL_MAP_DENOM * 2);
+        ay_lp = clamp_i32(ay_lp, -ACCEL_MAP_DENOM * 2, ACCEL_MAP_DENOM * 2);
+
+        /* Deadzone to avoid jitter when the board is nearly flat. */
+        if (abs_i32(ax_lp) < 6) ax_lp = 0;
+        if (abs_i32(ay_lp) < 6) ay_lp = 0;
+
+        /* Physics: treat accel as "gravity" and integrate velocity/position. */
+        const int32_t a_px_s2 = 2400; /* px/s^2 at ~1g (more responsive) */
+        const int32_t a_scale_q16 = (int32_t)(((int64_t)a_px_s2 << 16) / ACCEL_MAP_DENOM);
+        int32_t ax_a_q16 = ax_lp * a_scale_q16;
+        int32_t ay_a_q16 = ay_lp * a_scale_q16;
+
+        vx_q16 += (int32_t)(((int64_t)ax_a_q16 * dt_q16) >> 16);
+        vy_q16 += (int32_t)(((int64_t)ay_a_q16 * dt_q16) >> 16);
+
+        /* Damping (Q16). */
+        const int32_t damp = 64200; /* ~0.98 */
+        vx_q16 = (int32_t)(((int64_t)vx_q16 * damp) >> 16);
+        vy_q16 = (int32_t)(((int64_t)vy_q16 * damp) >> 16);
+
+        x_q16 += (int32_t)(((int64_t)vx_q16 * dt_q16) >> 16);
+        y_q16 += (int32_t)(((int64_t)vy_q16 * dt_q16) >> 16);
+
+        /* Bounds + bounce. */
+        const int32_t minx = BALL_R + 2;
+        const int32_t miny = BALL_R + 2;
+        const int32_t maxx = (LCD_W - 1) - (BALL_R + 2);
+        const int32_t maxy = (LCD_H - 1) - (BALL_R + 2);
+        int32_t cx = x_q16 >> 16;
+        int32_t cy = y_q16 >> 16;
+        if (cx < minx) { cx = minx; x_q16 = cx << 16; vx_q16 = -(vx_q16 * 3) / 4; }
+        if (cx > maxx) { cx = maxx; x_q16 = cx << 16; vx_q16 = -(vx_q16 * 3) / 4; }
+        if (cy < miny) { cy = miny; y_q16 = cy << 16; vy_q16 = -(vy_q16 * 3) / 4; }
+        if (cy > maxy) { cy = maxy; y_q16 = cy << 16; vy_q16 = -(vy_q16 * 3) / 4; }
+
+        /* Update trail ring. */
+        trail_x[trail_head] = (int16_t)cx;
+        trail_y[trail_head] = (int16_t)cy;
+        trail_head = (trail_head + 1u) % TRAIL_N;
+
+        /* Dirty rect: cover previous and current ball + trail area. */
+        int32_t minx_r = cx, miny_r = cy, maxx_r = cx, maxy_r = cy;
+        for (int i = 0; i < TRAIL_N; i++)
+        {
+            int32_t tx = trail_x[i];
+            int32_t ty = trail_y[i];
+            if (tx < minx_r) minx_r = tx;
+            if (ty < miny_r) miny_r = ty;
+            if (tx > maxx_r) maxx_r = tx;
+            if (ty > maxy_r) maxy_r = ty;
+        }
+        if (prev_x < minx_r) minx_r = prev_x;
+        if (prev_y < miny_r) miny_r = prev_y;
+        if (prev_x > maxx_r) maxx_r = prev_x;
+        if (prev_y > maxy_r) maxy_r = prev_y;
+
+        int32_t pad = BALL_R + 30;
+        int32_t x0 = clamp_i32(minx_r - pad, 0, LCD_W - 1);
+        int32_t y0 = clamp_i32(miny_r - pad, 0, LCD_H - 1);
+        int32_t x1 = clamp_i32(maxx_r + pad, 0, LCD_W - 1);
+        int32_t y1 = clamp_i32(maxy_r + pad, 0, LCD_H - 1);
+
+        /* Clamp tile size; if motion ever causes a large dirty rect, cap it to a fixed size. */
+        int32_t w = x1 - x0 + 1;
+        int32_t h = y1 - y0 + 1;
+        if (w > TILE_MAX_W || h > TILE_MAX_H)
+        {
+            int32_t halfw = TILE_MAX_W / 2;
+            int32_t halfh = TILE_MAX_H / 2;
+            int32_t ccx = (minx_r + maxx_r) / 2;
+            int32_t ccy = (miny_r + maxy_r) / 2;
+            x0 = clamp_i32(ccx - halfw, 0, LCD_W - 1);
+            y0 = clamp_i32(ccy - halfh, 0, LCD_H - 1);
+            x1 = clamp_i32(x0 + TILE_MAX_W - 1, 0, LCD_W - 1);
+            y1 = clamp_i32(y0 + TILE_MAX_H - 1, 0, LCD_H - 1);
+            w = x1 - x0 + 1;
+            h = y1 - y0 + 1;
+        }
+
+        /* Render into tile (black background) then blit once to avoid flicker/tearing lines. */
+        sw_render_clear(tile, (uint32_t)w, (uint32_t)h, 0x0000u);
+
+        /* Trails (streaks). */
+        for (int i = 0; i < TRAIL_N; i++)
+        {
+            uint32_t idx = (trail_head + (uint32_t)i) % TRAIL_N;
+            int32_t tx = trail_x[idx];
+            int32_t ty = trail_y[idx];
+            int r0 = 1 + (i / 6);
+            uint16_t c = (i < 6) ? 0x39E7u : 0x18C3u;
+            sw_render_filled_circle(tile, (uint32_t)w, (uint32_t)h, x0, y0, tx, ty, r0, c);
+        }
+
+        sw_render_ball_shadow(tile, (uint32_t)w, (uint32_t)h, x0, y0, cx, cy, BALL_R);
+        sw_render_silver_ball(tile, (uint32_t)w, (uint32_t)h, x0, y0, cx, cy, BALL_R, frame++, glint);
+
+        par_lcd_s035_blit_rect(x0, y0, x1, y1, tile);
+
+        prev_x = cx;
+        prev_y = cy;
+        stats_frames++;
+
+        /* NPU hook: run a Neutron-backed TFLM model at a low rate and use output to modulate "glint". */
+        if (npu_ok && (npu_accum_us >= 200000u))
+        {
+            npu_accum_us = 0;
+
+            /* Fill input tensor with a synthetic pattern derived from motion/tilt.
+             * This is a placeholder input; replace with real features later.
+             */
+            uint32_t n = 1;
+            if (in_dims.size >= 2) n = in_dims.data[1];
+            if (in_dims.size >= 3) n *= in_dims.data[2];
+            if (in_dims.size >= 4) n *= in_dims.data[3];
+
+            uint8_t base = 127u;
+            uint8_t amp = (uint8_t)clamp_i32((int32_t)((vx_q16 < 0 ? -vx_q16 : vx_q16) >> 16) +
+                                             (int32_t)((vy_q16 < 0 ? -vy_q16 : vy_q16) >> 16), 0, 80);
+            for (uint32_t i = 0; i < n; i++)
             {
-                shake_hold = 20;
+                /* simple repeating waveform */
+                uint8_t t = (uint8_t)(i & 31u);
+                uint8_t v = (t < 16u) ? (uint8_t)(base + (amp * t) / 16u) : (uint8_t)(base + (amp * (31u - t)) / 16u);
+                in_data[i] = v;
             }
-            if (shake_hold)
+
+            if (EDGEAI_MODEL_RunInference() == kStatus_Success)
             {
-                shake_hold--;
-                memset(trails, 0, sizeof(trails));
-            }
+                /* Convert model output to 0..255. */
+                uint32_t m = 0;
+                uint32_t out_n = 1;
+                if (out_dims.size >= 1) out_n = out_dims.data[0];
+                if (out_dims.size >= 2) out_n *= out_dims.data[1];
+                if (out_dims.size >= 3) out_n *= out_dims.data[2];
+                if (out_dims.size >= 4) out_n *= out_dims.data[3];
+                if (out_n == 0) out_n = 1;
 
-            grav_dir_t g = grav_from_sample(&s);
-            sim_step(&grid, g, &rng);
-            sim_step(&grid, g, &rng);
-
-            /* Ball "physics": inertia + swaps with sand/water; bounces off metal/bounds. */
-            {
-                /* Use filtered accel for smooth, responsive rolling. */
-                int32_t axf = ax_lp;
-                int32_t ayf = ay_lp;
-                ball_vx_fp += (axf / 32) * BALL_ACCEL_SCALE;
-                ball_vy_fp += (ayf / 32) * BALL_ACCEL_SCALE;
-
-                /* Damping. */
-                ball_vx_fp = (ball_vx_fp * BALL_DAMP_NUM) >> 8;
-                ball_vy_fp = (ball_vy_fp * BALL_DAMP_NUM) >> 8;
-
-                int32_t nx_fp = ball_x_fp + ball_vx_fp;
-                int32_t ny_fp = ball_y_fp + ball_vy_fp;
-
-                /* Bounds + bounce. */
-                int32_t minx = 0, miny = 0;
-                int32_t maxx = ((int32_t)grid.w - 1) << 8;
-                int32_t maxy = ((int32_t)grid.h - 1) << 8;
-
-                if (nx_fp < minx) { nx_fp = minx; ball_vx_fp = -(ball_vx_fp >> 1); }
-                if (nx_fp > maxx) { nx_fp = maxx; ball_vx_fp = -(ball_vx_fp >> 1); }
-                if (ny_fp < miny) { ny_fp = miny; ball_vy_fp = -(ball_vy_fp >> 1); }
-                if (ny_fp > maxy) { ny_fp = maxy; ball_vy_fp = -(ball_vy_fp >> 1); }
-
-                uint16_t nx = (uint16_t)(nx_fp >> 8);
-                uint16_t ny = (uint16_t)(ny_fp >> 8);
-
-                if (nx != ball_x || ny != ball_y)
+                if (out_type == kEdgeAiTensorType_UINT8)
                 {
-                    material_t dst = sim_get(&grid, nx, ny);
-                    if (dst == MAT_METAL)
-                    {
-                        /* Bounce back. */
-                        ball_vx_fp = -(ball_vx_fp >> 1);
-                        ball_vy_fp = -(ball_vy_fp >> 1);
-                    }
-                    else
-                    {
-                        /* Ball is rendered as an overlay; do not modify the world cell types. */
-                        ball_x = nx;
-                        ball_y = ny;
-                        ball_x_fp = nx_fp;
-                        ball_y_fp = ny_fp;
-                    }
+                    for (uint32_t i = 0; i < out_n; i++) if (out_data[i] > m) m = out_data[i];
+                    glint = (uint8_t)m;
+                }
+                else if (out_type == kEdgeAiTensorType_INT8)
+                {
+                    int8_t *p = (int8_t *)out_data;
+                    int32_t mm = -128;
+                    for (uint32_t i = 0; i < out_n; i++) if ((int32_t)p[i] > mm) mm = (int32_t)p[i];
+                    glint = (uint8_t)clamp_i32(mm + 128, 0, 255);
+                }
+                else
+                {
+                    /* float32 */
+                    float *p = (float *)out_data;
+                    float mm = p[0];
+                    for (uint32_t i = 1; i < out_n; i++) if (p[i] > mm) mm = p[i];
+                    if (mm < 0.0f) mm = 0.0f;
+                    if (mm > 1.0f) mm = 1.0f;
+                    glint = (uint8_t)(mm * 255.0f);
                 }
             }
+        }
 
-            /* Render at a lower cadence than sim updates. */
-            if ((tick % 4u) == 0u)
-            {
-                /* Update trails (ball-only; shake clears it). */
-                for (uint32_t i = 0; i < (uint32_t)grid.w * (uint32_t)grid.h; i++)
-                {
-                    uint8_t t = trails[i];
-                    trails[i] = (t > 8u) ? (uint8_t)(t - 8u) : 0u;
-                    prev_cells[i] = grid.cells[i];
-                }
-
-                /* Stamp a glowing trail. */
-                uint32_t bi = (uint32_t)ball_y * (uint32_t)grid.w + (uint32_t)ball_x;
-                if (bi < (uint32_t)grid.w * (uint32_t)grid.h)
-                {
-                    trails[bi] = 255u;
-                    if (ball_x > 0) trails[bi - 1] = 180u;
-                    if (ball_x + 1 < grid.w) trails[bi + 1] = 180u;
-                    if (ball_y > 0) trails[bi - grid.w] = 140u;
-                    if (ball_y + 1 < grid.h) trails[bi + grid.w] = 140u;
-                }
-
-                par_lcd_s035_render_grid(&grid, trails, tick, ball_x_fp, ball_y_fp);
-            }
-
-            if ((tick++ % 60u) == 0u)
-            {
-                /* fsl_debug_console printf formatting can be picky; cast explicitly. */
-                long ax = (long)((int32_t)s.x);
-                long ay = (long)((int32_t)s.y);
-                long az = (long)((int32_t)s.z);
-                PRINTF("accel raw x=%ld y=%ld z=%ld grav=%u\r\n", ax, ay, az, (unsigned)g);
-            }
+        if (stats_accum_us >= 1000000u)
+        {
+            uint32_t fps = stats_frames;
+            stats_accum_us = 0;
+            stats_frames = 0;
+            PRINTF("fps=%u ax=%ld ay=%ld cx=%ld cy=%ld vx=%ld vy=%ld glint=%u npu=%u\r\n",
+                   (unsigned)fps,
+                   (long)ax_lp, (long)ay_lp,
+                   (long)cx, (long)cy,
+                   (long)(vx_q16 >> 16), (long)(vy_q16 >> 16),
+                   (unsigned)glint,
+                   (unsigned)(npu_ok ? 1u : 0u));
         }
     }
 }

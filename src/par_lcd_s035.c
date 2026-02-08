@@ -2,28 +2,20 @@
 
 #include <string.h>
 
-#include "fsl_common.h"
 #include "fsl_clock.h"
 #include "fsl_debug_console.h"
 #include "fsl_gpio.h"
 
-#include "fsl_flexio_mculcd.h"
 #include "fsl_dbi_flexio_edma.h"
+#include "fsl_flexio_mculcd.h"
 #include "fsl_st7796s.h"
 
 #include "board.h"
 #include "pin_mux.h"
 
-#include "postfx.h"
-
-/* LCD shield used by the FRDM-MCXN947 LVGL examples: PAR-LCD-S035.
- * Controller: ST7796S, 480x320, 8080 parallel via FlexIO0.
- *
- * Pin mapping follows MCUX SDK board support:
- *   examples/_boards/frdmmcxn947/lvgl_examples/lvgl_support/lvgl_support_board.h
- */
-#define EDGEAI_LCD_WIDTH  480
-#define EDGEAI_LCD_HEIGHT 320
+/* NXP PAR-LCD-S035 (ST7796S, 480x320, 8080 via FlexIO0). */
+#define EDGEAI_LCD_WIDTH  480u
+#define EDGEAI_LCD_HEIGHT 320u
 
 #define EDGEAI_LCD_RST_GPIO GPIO4
 #define EDGEAI_LCD_RST_PIN  7u
@@ -87,12 +79,17 @@ static void edgeai_delay_ms(uint32_t ms)
     SDK_DelayAtLeastUs(ms * 1000u, SDK_DEVICE_MAXIMUM_CPU_CLOCK_FREQUENCY);
 }
 
+static void lcd_wait_write_done(void)
+{
+    while (!s_memWriteDone)
+    {
+    }
+}
+
 bool par_lcd_s035_init(void)
 {
-    /* Configure LCD pins (FlexIO bus + CS/RS/RST). */
     BOARD_InitLcdPins();
 
-    /* FlexIO MCU LCD device init. */
     flexio_mculcd_config_t flexioCfg;
     FLEXIO_MCULCD_GetDefaultConfig(&flexioCfg);
     flexioCfg.baudRate_Bps = EDGEAI_FLEXIO_BAUDRATE_BPS;
@@ -111,7 +108,7 @@ bool par_lcd_s035_init(void)
         return false;
     }
 
-    /* Hardware reset before controller init. */
+    /* Hardware reset. */
     GPIO_PinWrite(EDGEAI_LCD_RST_GPIO, EDGEAI_LCD_RST_PIN, 0u);
     edgeai_delay_ms(2);
     GPIO_PinWrite(EDGEAI_LCD_RST_GPIO, EDGEAI_LCD_RST_PIN, 1u);
@@ -139,13 +136,6 @@ bool par_lcd_s035_init(void)
     return true;
 }
 
-static void lcd_wait_write_done(void)
-{
-    while (!s_memWriteDone)
-    {
-    }
-}
-
 void par_lcd_s035_fill(uint16_t rgb565)
 {
     static uint16_t line[EDGEAI_LCD_WIDTH];
@@ -163,248 +153,306 @@ void par_lcd_s035_fill(uint16_t rgb565)
     }
 }
 
-static inline uint16_t mat_to_rgb565(uint8_t m)
+void par_lcd_s035_blit_rect(int32_t x0, int32_t y0, int32_t x1, int32_t y1, uint16_t *rgb565)
 {
-    switch (m)
-    {
-        case MAT_SAND:  return 0xF6A0u; /* warm yellow */
-        case MAT_WATER: return 0x03FFu; /* cyan-ish */
-        case MAT_METAL: return 0x8410u; /* grey */
-        case MAT_BALL:  return 0xFFFFu; /* white */
-        default:        return 0x0000u; /* black */
-    }
+    if (!rgb565) return;
+    if (x1 < x0 || y1 < y0) return;
+    if (x0 < 0) x0 = 0;
+    if (y0 < 0) y0 = 0;
+    if (x1 >= (int32_t)EDGEAI_LCD_WIDTH) x1 = (int32_t)EDGEAI_LCD_WIDTH - 1;
+    if (y1 >= (int32_t)EDGEAI_LCD_HEIGHT) y1 = (int32_t)EDGEAI_LCD_HEIGHT - 1;
+
+    uint32_t w = (uint32_t)(x1 - x0 + 1);
+    uint32_t h = (uint32_t)(y1 - y0 + 1);
+    uint32_t n = w * h;
+
+    ST7796S_SelectArea(&s_lcdHandle, (uint16_t)x0, (uint16_t)y0, (uint16_t)x1, (uint16_t)y1);
+    s_memWriteDone = false;
+    ST7796S_WritePixels(&s_lcdHandle, rgb565, n);
+    lcd_wait_write_done();
 }
 
-static inline uint16_t rgb565_add(uint16_t c, int dr, int dg, int db)
+static void lcd_fill_span(uint16_t x0, uint16_t y, uint16_t x1, uint16_t color)
 {
-    int r = (c >> 11) & 0x1F;
-    int g = (c >> 5)  & 0x3F;
-    int b = (c >> 0)  & 0x1F;
-    r += dr; g += dg; b += db;
-    if (r < 0) { r = 0; }
-    if (r > 31) { r = 31; }
-    if (g < 0) { g = 0; }
-    if (g > 63) { g = 63; }
-    if (b < 0) { b = 0; }
-    if (b > 31) { b = 31; }
-    return (uint16_t)((r << 11) | (g << 5) | (b << 0));
+    if (x1 < x0) return;
+    uint32_t w = (uint32_t)(x1 - x0 + 1u);
+    static uint16_t buf[EDGEAI_LCD_WIDTH];
+    if (w > EDGEAI_LCD_WIDTH) w = EDGEAI_LCD_WIDTH;
+    for (uint32_t i = 0; i < w; i++) buf[i] = color;
+
+    ST7796S_SelectArea(&s_lcdHandle, x0, y, x1, y);
+    s_memWriteDone = false;
+    ST7796S_WritePixels(&s_lcdHandle, buf, w);
+    lcd_wait_write_done();
 }
 
-static inline uint32_t hash32(uint32_t x)
+void par_lcd_s035_draw_filled_circle(int32_t cx, int32_t cy, int32_t r, uint16_t rgb565)
 {
-    x ^= x >> 16;
-    x *= 0x7feb352dU;
-    x ^= x >> 15;
-    x *= 0x846ca68bU;
-    x ^= x >> 16;
-    return x;
-}
+    if (r <= 0) return;
 
-static inline uint16_t mix_rgb565(uint16_t a, uint16_t b, uint8_t t /*0..255*/)
-{
-    int ar = (a >> 11) & 31, ag = (a >> 5) & 63, ab = a & 31;
-    int br = (b >> 11) & 31, bg = (b >> 5) & 63, bb = b & 31;
-    int r = (ar * (255 - t) + br * t) / 255;
-    int g = (ag * (255 - t) + bg * t) / 255;
-    int bl = (ab * (255 - t) + bb * t) / 255;
-    return (uint16_t)((r << 11) | (g << 5) | (bl << 0));
-}
+    int32_t y0 = cy - r;
+    int32_t y1 = cy + r;
+    if (y0 < 0) y0 = 0;
+    if (y1 >= (int32_t)EDGEAI_LCD_HEIGHT) y1 = (int32_t)EDGEAI_LCD_HEIGHT - 1;
 
-static inline uint16_t sample_cell_color(const sim_grid_t *grid,
-                                         uint32_t sx,
-                                         uint32_t sy,
-                                         const uint8_t *trail,
-                                         uint32_t frame)
-{
-    const uint32_t w = (uint32_t)grid->w;
-    const uint32_t h = (uint32_t)grid->h;
-    if (sx >= w) sx = w - 1u;
-    if (sy >= h) sy = h - 1u;
-
-    const uint8_t m = grid->cells[sy * w + sx];
-    uint16_t c = mat_to_rgb565(m);
-
-    /* Stylized shading: light from upper-left. */
-    if (m != MAT_EMPTY)
+    for (int32_t y = y0; y <= y1; y++)
     {
-        const bool empty_up   = (sy == 0) ? true : (grid->cells[(sy - 1u) * w + sx] == MAT_EMPTY);
-        const bool empty_left = (sx == 0) ? true : (grid->cells[sy * w + (sx - 1u)] == MAT_EMPTY);
-        const bool empty_dn   = (sy + 1u >= h) ? true : (grid->cells[(sy + 1u) * w + sx] == MAT_EMPTY);
-        const bool empty_rt   = (sx + 1u >= w) ? true : (grid->cells[sy * w + (sx + 1u)] == MAT_EMPTY);
+        int32_t dy = y - cy;
+        int32_t dy2 = dy * dy;
+        int32_t dx_max = 0;
 
-        if (empty_up || empty_left) c = rgb565_add(c, 2, 4, 2);
-        if (empty_dn || empty_rt)   c = rgb565_add(c, -2, -4, -2);
-    }
-
-    /* Material-specific "feel". */
-    const uint32_t hh = hash32((frame * 131u) ^ (sx * 911u) ^ (sy * 3571u));
-    if (m == MAT_WATER)
-    {
-        int s = (int)((hh >> 28) & 0xF) - 7;
-        c = rgb565_add(c, 0, s, s);
-    }
-    else if (m == MAT_SAND)
-    {
-        int n = (int)((hh >> 30) & 0x3) - 1;
-        c = rgb565_add(c, n, n * 2, 0);
-    }
-    else if (m == MAT_METAL)
-    {
-        if (((hh >> 27) & 0x7) == 0) c = rgb565_add(c, 3, 6, 3);
-    }
-
-    if (trail)
-    {
-        uint8_t t = trail[sy * w + sx];
-        if (t)
+        /* r is small; a short scan is fine and keeps code simple/deterministic. */
+        for (int32_t dx = 0; dx <= r; dx++)
         {
-            int boost = (int)(t >> 5);
-            c = rgb565_add(c, boost + 1, boost * 3, boost + 2);
+            if (dx * dx + dy2 > r * r)
+            {
+                dx_max = dx - 1;
+                break;
+            }
+            dx_max = dx;
         }
-    }
 
-    return c;
+        int32_t x0 = cx - dx_max;
+        int32_t x1 = cx + dx_max;
+        if (x0 < 0) x0 = 0;
+        if (x1 >= (int32_t)EDGEAI_LCD_WIDTH) x1 = (int32_t)EDGEAI_LCD_WIDTH - 1;
+
+        lcd_fill_span((uint16_t)x0, (uint16_t)y, (uint16_t)x1, rgb565);
+    }
 }
 
-void par_lcd_s035_render_grid(const sim_grid_t *grid,
-                              const uint8_t *trail,
-                              uint32_t frame,
-                              int32_t ball_x_fp,
-                              int32_t ball_y_fp)
+void par_lcd_s035_fill_rect(int32_t x0, int32_t y0, int32_t x1, int32_t y1, uint16_t rgb565)
 {
-    if (!grid || !grid->cells || grid->w == 0 || grid->h == 0)
+    if (x1 < x0 || y1 < y0) return;
+    if (x0 < 0) x0 = 0;
+    if (y0 < 0) y0 = 0;
+    if (x1 >= (int32_t)EDGEAI_LCD_WIDTH) x1 = (int32_t)EDGEAI_LCD_WIDTH - 1;
+    if (y1 >= (int32_t)EDGEAI_LCD_HEIGHT) y1 = (int32_t)EDGEAI_LCD_HEIGHT - 1;
+
+    uint32_t w = (uint32_t)(x1 - x0 + 1);
+    static uint16_t buf[EDGEAI_LCD_WIDTH];
+    if (w > EDGEAI_LCD_WIDTH) w = EDGEAI_LCD_WIDTH;
+    for (uint32_t i = 0; i < w; i++) buf[i] = rgb565;
+
+    for (int32_t y = y0; y <= y1; y++)
     {
-        return;
+        ST7796S_SelectArea(&s_lcdHandle, (uint16_t)x0, (uint16_t)y, (uint16_t)x1, (uint16_t)y);
+        s_memWriteDone = false;
+        ST7796S_WritePixels(&s_lcdHandle, buf, w);
+        lcd_wait_write_done();
     }
+}
+
+static inline uint16_t pack_rgb565_u8(uint32_t r8, uint32_t g8, uint32_t b8)
+{
+    if (r8 > 255u) r8 = 255u;
+    if (g8 > 255u) g8 = 255u;
+    if (b8 > 255u) b8 = 255u;
+    uint16_t r = (uint16_t)(r8 >> 3);
+    uint16_t g = (uint16_t)(g8 >> 2);
+    uint16_t b = (uint16_t)(b8 >> 3);
+    return (uint16_t)((r << 11) | (g << 5) | b);
+}
+
+static inline uint32_t isqrt_u32(uint32_t x)
+{
+    /* Integer sqrt (floor). */
+    uint32_t op = x;
+    uint32_t res = 0;
+    uint32_t one = 1uL << 30;
+    while (one > op) one >>= 2;
+    while (one != 0)
+    {
+        if (op >= res + one)
+        {
+            op -= res + one;
+            res = res + 2u * one;
+        }
+        res >>= 1;
+        one >>= 2;
+    }
+    return res;
+}
+
+void par_lcd_s035_draw_ball_shadow(int32_t cx, int32_t cy, int32_t r)
+{
+    /* Not a physical shadow on black; it's a soft AO spot to add depth. */
+    int32_t sh_cx = cx + (r / 4);
+    int32_t sh_cy = cy + r + (r / 2) + 8;
+    int32_t rx = r + 18;
+    int32_t ry = (r / 2) + 10;
+
+    int32_t y0 = sh_cy - ry;
+    int32_t y1 = sh_cy + ry;
+    if (y0 < 0) y0 = 0;
+    if (y1 >= (int32_t)EDGEAI_LCD_HEIGHT) y1 = (int32_t)EDGEAI_LCD_HEIGHT - 1;
+
+    static uint16_t line[EDGEAI_LCD_WIDTH];
+    for (int32_t y = y0; y <= y1; y++)
+    {
+        int32_t dy = y - sh_cy;
+        uint32_t dy2 = (uint32_t)(dy * dy);
+
+        int32_t x0 = sh_cx - rx;
+        int32_t x1 = sh_cx + rx;
+        if (x0 < 0) x0 = 0;
+        if (x1 >= (int32_t)EDGEAI_LCD_WIDTH) x1 = (int32_t)EDGEAI_LCD_WIDTH - 1;
+
+        uint32_t w = (uint32_t)(x1 - x0 + 1);
+        if (w > EDGEAI_LCD_WIDTH) w = EDGEAI_LCD_WIDTH;
+        memset(line, 0, w * sizeof(line[0])); /* background is black */
+
+        for (int32_t x = x0; x <= x1; x++)
+        {
+            int32_t dx = x - sh_cx;
+            uint32_t dx2 = (uint32_t)(dx * dx);
+            /* ellipse distance in Q8: (dx^2/rx^2)+(dy^2/ry^2) */
+            uint32_t d = (dx2 * 256u) / (uint32_t)(rx * rx) + (dy2 * 256u) / (uint32_t)(ry * ry);
+            if (d >= 256u) continue;
+
+            uint32_t t = 256u - d; /* 0..255 */
+            /* AO spot is a faint bluish-gray so it's visible on black. */
+            uint32_t a = (t * 60u) / 255u; /* 0..60 */
+            uint16_t c = pack_rgb565_u8(a, a, a + (a / 3));
+            line[(uint32_t)(x - x0)] = c;
+        }
+
+        ST7796S_SelectArea(&s_lcdHandle, (uint16_t)x0, (uint16_t)y, (uint16_t)x1, (uint16_t)y);
+        s_memWriteDone = false;
+        ST7796S_WritePixels(&s_lcdHandle, line, w);
+        lcd_wait_write_done();
+    }
+}
+
+void par_lcd_s035_draw_silver_ball(int32_t cx, int32_t cy, int32_t r, uint32_t frame, uint8_t glint)
+{
+    (void)frame;
+    if (r <= 0) return;
+
+    /* Ray-traced sphere shading for a single object (analytic ray/sphere). */
+    const int32_t x0 = (cx - r < 0) ? 0 : (cx - r);
+    const int32_t x1 = (cx + r >= (int32_t)EDGEAI_LCD_WIDTH) ? (int32_t)EDGEAI_LCD_WIDTH - 1 : (cx + r);
+    const int32_t y0 = (cy - r < 0) ? 0 : (cy - r);
+    const int32_t y1 = (cy + r >= (int32_t)EDGEAI_LCD_HEIGHT) ? (int32_t)EDGEAI_LCD_HEIGHT - 1 : (cy + r);
 
     static uint16_t line[EDGEAI_LCD_WIDTH];
 
-    /* Ball center in LCD pixels (derived from sim fixed-point coordinates). */
-    int32_t ball_x_px = (int32_t)(((int64_t)ball_x_fp * EDGEAI_LCD_WIDTH) / ((int64_t)grid->w * 256));
-    int32_t ball_y_px = (int32_t)(((int64_t)ball_y_fp * EDGEAI_LCD_HEIGHT) / ((int64_t)grid->h * 256));
-    const int32_t ball_r_px = 22; /* looks decent on 480x320 */
-    const int32_t ball_r2 = ball_r_px * ball_r_px;
+    /* Light direction (normalized-ish) in Q14. */
+    const int32_t Lx = -6553;  /* -0.4 */
+    const int32_t Ly = -9830;  /* -0.6 */
+    const int32_t Lz = 11469;  /*  0.7 */
 
-    for (uint32_t y = 0; y < EDGEAI_LCD_HEIGHT; y++)
+    const uint32_t r2 = (uint32_t)(r * r);
+
+    for (int32_t y = y0; y <= y1; y++)
     {
-        for (uint32_t x = 0; x < EDGEAI_LCD_WIDTH; x++)
+        uint32_t w = (uint32_t)(x1 - x0 + 1);
+        if (w > EDGEAI_LCD_WIDTH) w = EDGEAI_LCD_WIDTH;
+        memset(line, 0, w * sizeof(line[0])); /* background black */
+
+        int32_t dy = y - cy;
+        int32_t dy2 = dy * dy;
+        if ((uint32_t)dy2 > r2)
         {
-            /* Perceived-resolution boost:
-             * For 240x160 -> 480x320 (2x), do a tiny bilinear blend only on edges.
-             * This keeps the sim discrete but removes the huge blocky look.
+            /* no pixels in this row */
+            goto write_row;
+        }
+
+        /* Compute max dx for this row. */
+        uint32_t dx_max = isqrt_u32(r2 - (uint32_t)dy2);
+        int32_t sx0 = cx - (int32_t)dx_max;
+        int32_t sx1 = cx + (int32_t)dx_max;
+        if (sx0 < x0) sx0 = x0;
+        if (sx1 > x1) sx1 = x1;
+
+        for (int32_t x = sx0; x <= sx1; x++)
+        {
+            int32_t dx = x - cx;
+            uint32_t d2 = (uint32_t)(dx * dx + dy2);
+            if (d2 > r2) continue;
+
+            /* z = sqrt(r^2 - x^2 - y^2) */
+            uint32_t zz = isqrt_u32(r2 - d2);
+
+            /* Normal in Q14: n = (dx,dy,z)/r. */
+            int32_t nx = (dx << 14) / r;
+            int32_t ny = (dy << 14) / r;
+            int32_t nz = ((int32_t)zz << 14) / r;
+
+            /* Diffuse = max(dot(n, L), 0) in Q14. */
+            int32_t ndl = (nx * Lx + ny * Ly + nz * Lz) >> 14;
+            if (ndl < 0) ndl = 0;
+
+            /* View is (0,0,1). Spec approx: (max(Rz,0))^16. */
+            /* R = 2*ndl*n - L */
+            int32_t rz = ((2 * ndl * nz) >> 14) - Lz;
+            if (rz < 0) rz = 0;
+
+            /* Normalize-ish spec base to [0..1] Q14 by dividing by 1.0*Q14 (approx). */
+            int32_t s = rz;
+            /* pow16 */
+            int32_t s2 = (s * s) >> 14;
+            int32_t s4 = (s2 * s2) >> 14;
+            int32_t s8 = (s4 * s4) >> 14;
+            int32_t s16 = (s8 * s8) >> 14;
+
+            /* Fresnel term ~ (1-nz)^5, nz in Q14. */
+            int32_t inv = (1 << 14) - nz;
+            if (inv < 0) inv = 0;
+            int32_t f2 = (inv * inv) >> 14;
+            int32_t f4 = (f2 * f2) >> 14;
+            int32_t f5 = (f4 * inv) >> 14;
+
+            /* Silver base in 8-bit. */
+            uint32_t br = 180, bg = 185, bb = 195;
+
+            /* Lighting combine (all Q14), integer-only.
+             * glint scales specular to make the ball feel more "alive".
              */
-            if (grid->w == 240u && grid->h == 160u)
+            const int32_t amb = 2949;          /* 0.18 * 16384 */
+            const int32_t diff_k = 11469;      /* 0.70 * 16384 */
+            int32_t spec_k = 20480;            /* 1.25 * 16384 */
+            const int32_t fre_k  = 5734;       /* 0.35 * 16384 */
+            spec_k += (int32_t)((uint32_t)glint * 8192u / 255u); /* +0..0.5 */
+            int32_t diff = (ndl * diff_k) >> 14;
+            int32_t spec = (s16 * spec_k) >> 14;
+            int32_t fre  = (f5  * fre_k) >> 14;
+            int32_t I = amb + diff;
+            if (I > (3 << 14)) I = (3 << 14);
+
+            /* Apply diffuse/ambient to base. */
+            uint32_t r8 = (br * (uint32_t)I) >> 14;
+            uint32_t g8 = (bg * (uint32_t)I) >> 14;
+            uint32_t b8 = (bb * (uint32_t)I) >> 14;
+
+            /* Add specular (white) and fresnel (cool tint). */
+            r8 += (uint32_t)((255u * (uint32_t)spec) >> 14);
+            g8 += (uint32_t)((255u * (uint32_t)spec) >> 14);
+            b8 += (uint32_t)((255u * (uint32_t)spec) >> 14);
+
+            r8 += (uint32_t)((40u * (uint32_t)fre) >> 14);
+            g8 += (uint32_t)((60u * (uint32_t)fre) >> 14);
+            b8 += (uint32_t)((90u * (uint32_t)fre) >> 14);
+
+            /* Optional "streak" highlight across the ball when glint is strong. */
+            if (glint > 160u)
             {
-                const uint32_t sx0 = x >> 1;
-                const uint32_t sy0 = y >> 1;
-                const uint32_t sx1 = (sx0 + 1u < (uint32_t)grid->w) ? (sx0 + 1u) : sx0;
-                const uint32_t sy1 = (sy0 + 1u < (uint32_t)grid->h) ? (sy0 + 1u) : sy0;
-
-                const uint8_t m00 = grid->cells[sy0 * (uint32_t)grid->w + sx0];
-                const uint8_t m10 = grid->cells[sy0 * (uint32_t)grid->w + sx1];
-                const uint8_t m01 = grid->cells[sy1 * (uint32_t)grid->w + sx0];
-                const uint8_t m11 = grid->cells[sy1 * (uint32_t)grid->w + sx1];
-
-                uint16_t c00 = sample_cell_color(grid, sx0, sy0, trail, frame);
-                if ((m00 == m10) && (m00 == m01) && (m00 == m11))
+                int32_t band = (dx + dy + (r / 3));
+                if (band > -2 && band < 2)
                 {
-                    line[x] = c00;
-                }
-                else
-                {
-                    uint16_t c10 = sample_cell_color(grid, sx1, sy0, trail, frame);
-                    uint16_t c01 = sample_cell_color(grid, sx0, sy1, trail, frame);
-                    uint16_t c11 = sample_cell_color(grid, sx1, sy1, trail, frame);
-
-                    const uint8_t wx = (x & 1u) ? 128u : 0u;
-                    const uint8_t wy = (y & 1u) ? 128u : 0u;
-                    uint16_t top = mix_rgb565(c00, c10, wx);
-                    uint16_t bot = mix_rgb565(c01, c11, wx);
-                    line[x] = mix_rgb565(top, bot, wy);
+                    r8 += 40u;
+                    g8 += 50u;
+                    b8 += 60u;
                 }
             }
-            else
-            {
-                uint32_t sx = (x * (uint32_t)grid->w) / EDGEAI_LCD_WIDTH;
-                uint32_t sy = (y * (uint32_t)grid->h) / EDGEAI_LCD_HEIGHT;
-                line[x] = sample_cell_color(grid, sx, sy, trail, frame);
-            }
+
+            line[(uint32_t)(x - x0)] = pack_rgb565_u8(r8, g8, b8);
         }
 
-        /* Glass-ball overlay (line-local). */
-        if (ball_x_fp || ball_y_fp)
-        {
-            int32_t dy = (int32_t)y - ball_y_px;
-            int32_t dy2 = dy * dy;
-            if (dy2 <= ball_r2)
-            {
-                int32_t dx_max = 0;
-                /* integer sqrt approx via linear scan (radius small) */
-                for (int32_t dx = 0; dx <= ball_r_px; dx++)
-                {
-                    if (dx * dx + dy2 > ball_r2)
-                    {
-                        dx_max = dx - 1;
-                        break;
-                    }
-                    dx_max = dx;
-                }
-
-                int32_t x0 = ball_x_px - dx_max;
-                int32_t x1 = ball_x_px + dx_max;
-                if (x0 < 0) x0 = 0;
-                if (x1 >= (int32_t)EDGEAI_LCD_WIDTH) x1 = (int32_t)EDGEAI_LCD_WIDTH - 1;
-
-                for (int32_t xx = x0; xx <= x1; xx++)
-                {
-                    int32_t dx = xx - ball_x_px;
-                    int32_t d2 = dx * dx + dy2;
-                    if (d2 > ball_r2) continue;
-
-                    /* Normalized depth (0..255), 255 at center. */
-                    uint8_t depth = (uint8_t)((uint32_t)(ball_r2 - d2) * 255u / (uint32_t)ball_r2);
-
-                    /* Faux refraction: sample a nearby pixel along the normal. */
-                    int32_t shift = (dx / 6);
-                    int32_t sx = xx + shift;
-                    if (sx < 0) sx = 0;
-                    if (sx >= (int32_t)EDGEAI_LCD_WIDTH) sx = (int32_t)EDGEAI_LCD_WIDTH - 1;
-
-                    uint16_t base = line[xx];
-                    uint16_t refr = line[sx];
-
-                    /* Metal look: dark base + environment reflection + hard specular. */
-                    uint16_t metal = 0x7BEFu; /* light grey */
-                    uint16_t mixed = mix_rgb565(base, metal, 120u);
-                    mixed = mix_rgb565(mixed, refr, (uint8_t)(30u + (depth >> 3)));
-
-                    /* Brushed texture (horizontal). */
-                    if (((hash32((uint32_t)xx * 13u + frame) >> 28) & 1u) != 0u)
-                    {
-                        mixed = rgb565_add(mixed, 1, 2, 1);
-                    }
-
-                    /* Specular highlight (upper-left). */
-                    int32_t hl = (-(dx + dy) + (ball_r_px / 2)) * 5;
-                    if (hl < 0) hl = 0;
-                    if (hl > 90) hl = 90;
-                    mixed = rgb565_add(mixed, hl / 10, hl / 6, hl / 10);
-
-                    /* Rim light. */
-                    if (depth < 50u) mixed = rgb565_add(mixed, 2, 4, 6);
-
-                    line[xx] = mixed;
-                }
-            }
-        }
-
-#if defined(CONFIG_EDGEAI_USE_POSTFX) && (CONFIG_EDGEAI_USE_POSTFX == 1)
-        postfx_apply_line_rgb565(line, EDGEAI_LCD_WIDTH, y, frame);
-#endif
-
-        ST7796S_SelectArea(&s_lcdHandle, 0, (uint16_t)y, EDGEAI_LCD_WIDTH - 1u, (uint16_t)y);
+write_row:
+        ST7796S_SelectArea(&s_lcdHandle, (uint16_t)x0, (uint16_t)y, (uint16_t)x1, (uint16_t)y);
         s_memWriteDone = false;
-        ST7796S_WritePixels(&s_lcdHandle, line, EDGEAI_LCD_WIDTH);
+        ST7796S_WritePixels(&s_lcdHandle, line, w);
         lcd_wait_write_done();
     }
 }
