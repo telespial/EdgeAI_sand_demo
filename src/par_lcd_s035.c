@@ -14,6 +14,8 @@
 #include "board.h"
 #include "pin_mux.h"
 
+#include "edgeai_util.h"
+
 /* NXP PAR-LCD-S035 (ST7796S, 480x320, 8080 via FlexIO0). */
 /* Note: this driver uses a single-buffer update path.
  * DMA, double-buffering, or alternative partial-redraw strategies should be implemented here.
@@ -340,7 +342,6 @@ void par_lcd_s035_draw_ball_shadow(int32_t cx, int32_t cy, int32_t r, uint32_t a
 
 void par_lcd_s035_draw_silver_ball(int32_t cx, int32_t cy, int32_t r, uint32_t frame, uint8_t glint)
 {
-    (void)frame;
     if (r <= 0) return;
 
     /* Ray-traced sphere shading for a single object (analytic ray/sphere). */
@@ -351,10 +352,19 @@ void par_lcd_s035_draw_silver_ball(int32_t cx, int32_t cy, int32_t r, uint32_t f
 
     static uint16_t line[EDGEAI_LCD_WIDTH];
 
-    /* Light direction (normalized-ish) in Q14. */
-    const int32_t Lx = -6553;  /* -0.4 */
-    const int32_t Ly = -9830;  /* -0.6 */
-    const int32_t Lz = 11469;  /*  0.7 */
+    /* Light direction (normalized-ish) in Q14, with a subtle wobble for moving highlights. */
+    int32_t Lx = -6553;  /* -0.4 */
+    int32_t Ly = -9830;  /* -0.6 */
+    int32_t Lz = 11469;  /*  0.7 */
+    {
+        uint32_t tt = frame & 127u;
+        int32_t tri = (tt < 64u) ? (int32_t)tt : (int32_t)(127u - tt); /* 0..63..0 */
+        int32_t wave = tri - 32;                                      /* -32..31..-32 */
+        int32_t wob = (wave * (int32_t)(400 + glint)) / 32;
+        Lx = edgeai_clamp_i32(Lx + wob, -16000, 16000);
+        Ly = edgeai_clamp_i32(Ly - (wob / 2), -16000, 16000);
+        (void)Lz;
+    }
 
     const uint32_t r2 = (uint32_t)(r * r);
 
@@ -449,14 +459,17 @@ void par_lcd_s035_draw_silver_ball(int32_t cx, int32_t cy, int32_t r, uint32_t f
             b8 += (uint32_t)((90u * (uint32_t)fre) >> 14);
 
             /* Optional "streak" highlight across the ball when glint is strong. */
-            if (glint > 160u)
+            if (glint > 80u)
             {
-                int32_t band = (dx + dy + (r / 3));
-                if (band > -2 && band < 2)
+                int32_t phase = (int32_t)((frame >> 1) & 31u) - 16;
+                int32_t bw = 1 + (int32_t)(glint / 96u);
+                int32_t band = (dx - dy + phase);
+                if (band > -bw && band < bw)
                 {
-                    r8 += 40u;
-                    g8 += 50u;
-                    b8 += 60u;
+                    uint32_t a = (uint32_t)edgeai_clamp_i32((int32_t)glint - 60, 0, 255);
+                    r8 += a / 6u;
+                    g8 += a / 5u;
+                    b8 += a / 4u;
                 }
             }
 

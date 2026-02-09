@@ -3,6 +3,7 @@
 #include <string.h>
 
 #include "dune_bg.h"
+#include "edgeai_util.h"
 
 static const uint8_t *sw_glyph5x7(char c)
 {
@@ -144,6 +145,19 @@ void sw_render_dune_bg(uint16_t *dst, uint32_t w, uint32_t h,
     }
 }
 
+static inline uint16_t sw_sample_dune_bg(int32_t gx, int32_t gy)
+{
+    if (gy < 0) gy = 0;
+    uint32_t ty = ((uint32_t)gy) >> 1;
+    if (ty >= DUNE_TEX_H) ty = DUNE_TEX_H - 1u;
+
+    if (gx < 0) gx = 0;
+    uint32_t tx = ((uint32_t)gx) >> 1;
+    if (tx >= DUNE_TEX_W) tx = DUNE_TEX_W - 1u;
+
+    return g_dune_tex[ty * DUNE_TEX_W + tx];
+}
+
 void sw_render_filled_circle(uint16_t *dst, uint32_t w, uint32_t h,
                              int32_t x0, int32_t y0,
                              int32_t cx, int32_t cy, int32_t r, uint16_t rgb565)
@@ -226,7 +240,6 @@ void sw_render_silver_ball(uint16_t *dst, uint32_t w, uint32_t h,
                            int32_t x0, int32_t y0,
                            int32_t cx, int32_t cy, int32_t r, uint32_t frame, uint8_t glint)
 {
-    (void)frame;
     if (!dst || r <= 0) return;
 
     int32_t sx0 = cx - r;
@@ -234,10 +247,19 @@ void sw_render_silver_ball(uint16_t *dst, uint32_t w, uint32_t h,
     int32_t sy0 = cy - r;
     int32_t sy1 = cy + r;
 
-    /* Light direction (normalized-ish) in Q14. */
-    const int32_t Lx = -6553;  /* -0.4 */
-    const int32_t Ly = -9830;  /* -0.6 */
-    const int32_t Lz = 11469;  /*  0.7 */
+    /* Light direction (normalized-ish) in Q14, with a subtle wobble for moving highlights. */
+    int32_t Lx = -6553;  /* -0.4 */
+    int32_t Ly = -9830;  /* -0.6 */
+    int32_t Lz = 11469;  /*  0.7 */
+    {
+        uint32_t tt = frame & 127u;
+        int32_t tri = (tt < 64u) ? (int32_t)tt : (int32_t)(127u - tt); /* 0..63..0 */
+        int32_t wave = tri - 32;                                      /* -32..31..-32 */
+        int32_t wob = (wave * (int32_t)(400 + glint)) / 32;           /* Q14 delta */
+        Lx = edgeai_clamp_i32(Lx + wob, -16000, 16000);
+        Ly = edgeai_clamp_i32(Ly - (wob / 2), -16000, 16000);
+        (void)Lz;
+    }
 
     const uint32_t r2 = (uint32_t)(r * r);
 
@@ -308,22 +330,43 @@ void sw_render_silver_ball(uint16_t *dst, uint32_t w, uint32_t h,
             uint32_t g8 = (bg * (uint32_t)I) >> 14;
             uint32_t b8 = (bb * (uint32_t)I) >> 14;
 
-            r8 += (uint32_t)((255u * (uint32_t)spec) >> 14);
-            g8 += (uint32_t)((255u * (uint32_t)spec) >> 14);
-            b8 += (uint32_t)((255u * (uint32_t)spec) >> 14);
+            /* Specular: add a bright highlight and a background reflection (dune) for a ball bearing look. */
+            int32_t env_q14 = spec + (fre >> 1);
+            if (env_q14 > (1 << 14)) env_q14 = (1 << 14);
+            if (env_q14 < 0) env_q14 = 0;
+
+            int32_t refl_scale = r * 3;
+            int32_t ex = cx + ((nx * refl_scale) >> 14);
+            int32_t ey = cy + ((ny * refl_scale) >> 14);
+            uint16_t env565 = sw_sample_dune_bg(ex, ey);
+            uint32_t er = ((env565 >> 11) & 31u); er = (er << 3) | (er >> 2);
+            uint32_t eg = ((env565 >> 5) & 63u);  eg = (eg << 2) | (eg >> 4);
+            uint32_t eb = (env565 & 31u);         eb = (eb << 3) | (eb >> 2);
+
+            r8 += (uint32_t)((er * (uint32_t)env_q14) >> 14);
+            g8 += (uint32_t)((eg * (uint32_t)env_q14) >> 14);
+            b8 += (uint32_t)((eb * (uint32_t)env_q14) >> 14);
+
+            r8 += (uint32_t)((180u * (uint32_t)spec) >> 14);
+            g8 += (uint32_t)((180u * (uint32_t)spec) >> 14);
+            b8 += (uint32_t)((200u * (uint32_t)spec) >> 14);
 
             r8 += (uint32_t)((40u * (uint32_t)fre) >> 14);
             g8 += (uint32_t)((60u * (uint32_t)fre) >> 14);
             b8 += (uint32_t)((90u * (uint32_t)fre) >> 14);
 
-            if (glint > 160u)
+            /* Moving "streak" highlight across the ball. */
+            if (glint > 80u)
             {
-                int32_t band = (dx + dy + (r / 3));
-                if (band > -2 && band < 2)
+                int32_t phase = (int32_t)((frame >> 1) & 31u) - 16;
+                int32_t bw = 1 + (int32_t)(glint / 96u);
+                int32_t band = (dx - dy + phase);
+                if (band > -bw && band < bw)
                 {
-                    r8 += 40u;
-                    g8 += 50u;
-                    b8 += 60u;
+                    uint32_t a = (uint32_t)edgeai_clamp_i32((int32_t)glint - 60, 0, 255);
+                    r8 += a / 6u;
+                    g8 += a / 5u;
+                    b8 += a / 4u;
                 }
             }
 
