@@ -15,6 +15,9 @@
 #include "pin_mux.h"
 
 /* NXP PAR-LCD-S035 (ST7796S, 480x320, 8080 via FlexIO0). */
+/* Note: this driver uses a single-buffer update path.
+ * DMA, double-buffering, or alternative partial-redraw strategies should be implemented here.
+ */
 #define EDGEAI_LCD_WIDTH  480u
 #define EDGEAI_LCD_HEIGHT 320u
 

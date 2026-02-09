@@ -1,0 +1,182 @@
+#include "render_world.h"
+
+#include "edgeai_config.h"
+#include "edgeai_util.h"
+#include "par_lcd_s035.h"
+#include "sw_render.h"
+#include "text5x7.h"
+
+#ifndef EDGEAI_RENDER_SINGLE_BLIT
+#define EDGEAI_RENDER_SINGLE_BLIT 1
+#endif
+
+static int32_t edgeai_ball_r_for_y(int32_t cy)
+{
+    const int32_t y_far = 26;
+    const int32_t y_near = EDGEAI_LCD_H - 26;
+    int32_t denom = (y_near - y_far);
+    int32_t t_q8 = 256;
+    if (denom > 0)
+    {
+        int32_t num = cy - y_far;
+        if (num < 0) num = 0;
+        if (num > denom) num = denom;
+        t_q8 = (num * 256) / denom;
+    }
+
+    int32_t r = EDGEAI_BALL_R_MIN + ((t_q8 * (EDGEAI_BALL_R_MAX - EDGEAI_BALL_R_MIN)) / 256);
+    if (r < EDGEAI_BALL_R_MIN) r = EDGEAI_BALL_R_MIN;
+    if (r > EDGEAI_BALL_R_MAX) r = EDGEAI_BALL_R_MAX;
+    return r;
+}
+
+void render_world_init(render_state_t *rs, int32_t cx, int32_t cy)
+{
+    if (!rs) return;
+    rs->trail_head = 0;
+    for (int i = 0; i < EDGEAI_TRAIL_N; i++)
+    {
+        rs->trail_x[i] = (int16_t)cx;
+        rs->trail_y[i] = (int16_t)cy;
+    }
+    rs->prev_x = cx;
+    rs->prev_y = cy;
+    rs->frame = 0;
+}
+
+bool render_world_draw(render_state_t *rs,
+                       const sim_world_t *world,
+                       bool do_render,
+                       const render_hud_t *hud)
+{
+    if (!rs || !world || !hud) return false;
+    if (!do_render) return false;
+
+    int32_t cx = world->ball.x_q16 >> 16;
+    int32_t cy = world->ball.y_q16 >> 16;
+    int32_t r_draw = edgeai_ball_r_for_y(cy);
+
+    int32_t removed_tx = rs->trail_x[rs->trail_head];
+    int32_t removed_ty = rs->trail_y[rs->trail_head];
+
+    rs->trail_x[rs->trail_head] = (int16_t)cx;
+    rs->trail_y[rs->trail_head] = (int16_t)cy;
+    rs->trail_head = (rs->trail_head + 1u) % EDGEAI_TRAIL_N;
+
+    int32_t minx_r = cx, miny_r = cy, maxx_r = cx, maxy_r = cy;
+    for (int i = 0; i < EDGEAI_TRAIL_N; i++)
+    {
+        int32_t tx = rs->trail_x[i];
+        int32_t ty = rs->trail_y[i];
+        if (tx < minx_r) minx_r = tx;
+        if (ty < miny_r) miny_r = ty;
+        if (tx > maxx_r) maxx_r = tx;
+        if (ty > maxy_r) maxy_r = ty;
+    }
+    if (removed_tx < minx_r) minx_r = removed_tx;
+    if (removed_ty < miny_r) miny_r = removed_ty;
+    if (removed_tx > maxx_r) maxx_r = removed_tx;
+    if (removed_ty > maxy_r) maxy_r = removed_ty;
+    if (rs->prev_x < minx_r) minx_r = rs->prev_x;
+    if (rs->prev_y < miny_r) miny_r = rs->prev_y;
+    if (rs->prev_x > maxx_r) maxx_r = rs->prev_x;
+    if (rs->prev_y > maxy_r) maxy_r = rs->prev_y;
+
+    int32_t pad = EDGEAI_BALL_R_MAX + 30;
+    int32_t x0 = edgeai_clamp_i32(minx_r - pad, 0, EDGEAI_LCD_W - 1);
+    int32_t y0 = edgeai_clamp_i32(miny_r - pad, 0, EDGEAI_LCD_H - 1);
+    int32_t x1 = edgeai_clamp_i32(maxx_r + pad, 0, EDGEAI_LCD_W - 1);
+    int32_t y1 = edgeai_clamp_i32(maxy_r + pad, 0, EDGEAI_LCD_H - 1);
+
+    /* HUD region (top-right). */
+    const int32_t ov_w = 120;
+    const int32_t ov_h = 9;
+    const int32_t ov_x0 = EDGEAI_LCD_W - ov_w - 2;
+    const int32_t ov_y0 = 2;
+    const int32_t ov_x1 = EDGEAI_LCD_W - 2;
+    const int32_t ov_y1 = ov_y0 + ov_h - 1;
+    if (ov_x0 < x0) x0 = ov_x0;
+    if (ov_y0 < y0) y0 = ov_y0;
+    if (ov_x1 > x1) x1 = ov_x1;
+    if (ov_y1 > y1) y1 = ov_y1;
+
+    int32_t w = x1 - x0 + 1;
+    int32_t h = y1 - y0 + 1;
+    if (w > EDGEAI_TILE_MAX_W || h > EDGEAI_TILE_MAX_H)
+    {
+        int32_t halfw = EDGEAI_TILE_MAX_W / 2;
+        int32_t halfh = EDGEAI_TILE_MAX_H / 2;
+        int32_t ccx = (minx_r + maxx_r) / 2;
+        int32_t ccy = (miny_r + maxy_r) / 2;
+        x0 = edgeai_clamp_i32(ccx - halfw, 0, EDGEAI_LCD_W - 1);
+        y0 = edgeai_clamp_i32(ccy - halfh, 0, EDGEAI_LCD_H - 1);
+        x1 = edgeai_clamp_i32(x0 + EDGEAI_TILE_MAX_W - 1, 0, EDGEAI_LCD_W - 1);
+        y1 = edgeai_clamp_i32(y0 + EDGEAI_TILE_MAX_H - 1, 0, EDGEAI_LCD_H - 1);
+        w = x1 - x0 + 1;
+        h = y1 - y0 + 1;
+    }
+
+#if EDGEAI_RENDER_SINGLE_BLIT
+    static uint16_t tile[EDGEAI_TILE_MAX_W * EDGEAI_TILE_MAX_H];
+
+    sw_render_dune_bg(tile, (uint32_t)w, (uint32_t)h, x0, y0);
+
+    for (int i = 0; i < EDGEAI_TRAIL_N; i++)
+    {
+        uint32_t idx = (rs->trail_head + (uint32_t)i) % EDGEAI_TRAIL_N;
+        int32_t tx = rs->trail_x[idx];
+        int32_t ty = rs->trail_y[idx];
+        int r0 = 1 + (i / 6);
+        uint16_t c = (i < 6) ? 0x39E7u : 0x18C3u;
+        sw_render_filled_circle(tile, (uint32_t)w, (uint32_t)h, x0, y0, tx, ty, r0, c);
+    }
+
+    sw_render_ball_shadow(tile, (uint32_t)w, (uint32_t)h, x0, y0, cx, cy, r_draw);
+    sw_render_silver_ball(tile, (uint32_t)w, (uint32_t)h, x0, y0, cx, cy, r_draw, rs->frame++, world->ball.glint);
+
+    char d3[4];
+    edgeai_u32_to_dec3(d3, hud->fps_last);
+    char status[40];
+    /* Format: C:XYZ B:S N:0 I:0 */
+    status[0] = 'C'; status[1] = ':'; status[2] = d3[0]; status[3] = d3[1]; status[4] = d3[2];
+    status[5] = ' '; status[6] = 'B'; status[7] = ':'; status[8] = hud->npu_backend;
+    status[9] = ' '; status[10] = 'N'; status[11] = ':'; status[12] = hud->npu_init_ok ? '1' : '0';
+    status[13] = ' '; status[14] = 'I'; status[15] = ':'; status[16] = hud->npu_run_enabled ? '1' : '0';
+    status[17] = '\0';
+    sw_render_text5x7(tile, (uint32_t)w, (uint32_t)h, x0, y0, ov_x0, ov_y0, status, 0x001Fu);
+
+    par_lcd_s035_blit_rect(x0, y0, x1, y1, tile);
+#else
+    uint16_t bg = hud->accel_fail ? 0x1800u : 0x0000u;
+    par_lcd_s035_fill_rect(x0, y0, x1, y1, bg);
+
+    for (int i = 0; i < EDGEAI_TRAIL_N; i++)
+    {
+        uint32_t idx = (rs->trail_head + (uint32_t)i) % EDGEAI_TRAIL_N;
+        int32_t tx = rs->trail_x[idx];
+        int32_t ty = rs->trail_y[idx];
+        int r0 = 1 + (i / 6);
+        uint16_t c = (i < 6) ? 0x39E7u : 0x18C3u;
+        par_lcd_s035_draw_filled_circle(tx, ty, r0, c);
+    }
+
+    par_lcd_s035_draw_ball_shadow(cx, cy, r_draw);
+    par_lcd_s035_draw_silver_ball(cx, cy, r_draw, rs->frame++, world->ball.glint);
+
+    char d3[4];
+    edgeai_u32_to_dec3(d3, hud->fps_last);
+    char status[40];
+    status[0] = 'C'; status[1] = ':'; status[2] = d3[0]; status[3] = d3[1]; status[4] = d3[2];
+    status[5] = ' '; status[6] = 'B'; status[7] = ':'; status[8] = hud->npu_backend;
+    status[9] = ' '; status[10] = 'N'; status[11] = ':'; status[12] = hud->npu_init_ok ? '1' : '0';
+    status[13] = ' '; status[14] = 'I'; status[15] = ':'; status[16] = hud->npu_run_enabled ? '1' : '0';
+    status[17] = '\0';
+    par_lcd_s035_fill_rect(ov_x0, ov_y0, ov_x1, ov_y1, 0x0000u);
+    edgeai_text5x7_draw_scaled(ov_x0, ov_y0, 1, status, 0x001Fu);
+#endif
+
+    rs->prev_x = cx;
+    rs->prev_y = cy;
+    return true;
+}
+

@@ -1,0 +1,80 @@
+#include "accel_proc.h"
+
+#include "edgeai_config.h"
+#include "edgeai_util.h"
+
+void accel_proc_init(accel_proc_t *s)
+{
+    if (!s) return;
+    s->ax_lp = 0;
+    s->ay_lp = 0;
+}
+
+void accel_proc_apply_axis_map(int32_t *ax, int32_t *ay)
+{
+    if (!ax || !ay) return;
+#if EDGEAI_ACCEL_SWAP_XY
+    int32_t tmp = *ax; *ax = *ay; *ay = tmp;
+#endif
+#if EDGEAI_ACCEL_INVERT_X
+    *ax = -*ax;
+#endif
+#if EDGEAI_ACCEL_INVERT_Y
+    *ay = -*ay;
+#endif
+}
+
+void accel_proc_update(accel_proc_t *s, int32_t raw_x, int32_t raw_y, accel_proc_out_t *out)
+{
+    if (!s || !out) return;
+
+    int32_t ax = raw_x;
+    int32_t ay = raw_y;
+    accel_proc_apply_axis_map(&ax, &ay);
+
+    /* Fast low-pass so small tilts respond quickly. */
+    s->ax_lp += (ax - s->ax_lp) >> 2;
+    s->ay_lp += (ay - s->ay_lp) >> 2;
+
+    /* Clamp to limit I2C glitches and avoid sudden large steps. */
+    const int32_t clamp_lim = EDGEAI_ACCEL_MAP_DENOM * 2;
+    s->ax_lp = edgeai_clamp_i32(s->ax_lp, -clamp_lim, clamp_lim);
+    s->ay_lp = edgeai_clamp_i32(s->ay_lp, -clamp_lim, clamp_lim);
+
+    /* Deadzoned soft response:
+     * - small deadzone reduces jitter
+     * - blended linear/cubic curve reduces twitch near center while keeping strong response at larger tilts
+     */
+    const int32_t deadzone = 10;
+    int32_t ax_dz = s->ax_lp;
+    int32_t ay_dz = s->ay_lp;
+    if (edgeai_abs_i32(ax_dz) <= deadzone) ax_dz = 0;
+    else ax_dz -= (ax_dz > 0) ? deadzone : -deadzone;
+    if (edgeai_abs_i32(ay_dz) <= deadzone) ay_dz = 0;
+    else ay_dz -= (ay_dz > 0) ? deadzone : -deadzone;
+
+    /* Normalize to Q15 ~= [-1,1] at 1g. */
+    int32_t ax_n_q15 = (int32_t)(((int64_t)ax_dz << 15) / (int64_t)EDGEAI_ACCEL_MAP_DENOM);
+    int32_t ay_n_q15 = (int32_t)(((int64_t)ay_dz << 15) / (int64_t)EDGEAI_ACCEL_MAP_DENOM);
+    ax_n_q15 = edgeai_clamp_i32_sym(ax_n_q15, 32767);
+    ay_n_q15 = edgeai_clamp_i32_sym(ay_n_q15, 32767);
+
+    /* cubic = x^3 (Q15) */
+    int32_t ax2 = (int32_t)(((int64_t)ax_n_q15 * ax_n_q15) >> 15);
+    int32_t ay2 = (int32_t)(((int64_t)ay_n_q15 * ay_n_q15) >> 15);
+    int32_t ax_cu_q15 = (int32_t)(((int64_t)ax2 * ax_n_q15) >> 15);
+    int32_t ay_cu_q15 = (int32_t)(((int64_t)ay2 * ay_n_q15) >> 15);
+
+    /* Blend: 35% linear + 65% cubic (alpha in Q15). */
+    const int32_t alpha_q15 = 11469;
+    int32_t ax_soft_q15 = (int32_t)(((int64_t)ax_n_q15 * alpha_q15 +
+                                     (int64_t)ax_cu_q15 * ((1 << 15) - alpha_q15)) >> 15);
+    int32_t ay_soft_q15 = (int32_t)(((int64_t)ay_n_q15 * alpha_q15 +
+                                     (int64_t)ay_cu_q15 * ((1 << 15) - alpha_q15)) >> 15);
+
+    out->ax_lp = s->ax_lp;
+    out->ay_lp = s->ay_lp;
+    out->ax_soft_q15 = ax_soft_q15;
+    out->ay_soft_q15 = ay_soft_q15;
+}
+

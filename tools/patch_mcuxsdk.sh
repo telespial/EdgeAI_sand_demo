@@ -32,8 +32,6 @@ fi
 # Ensure the example wrapper pulls in repo sources (when the workspace was created
 # before adding new files).
 if [[ -f "$EDGEAI_CMAKELISTS" ]]; then
-  if ! grep -q 'src/sw_render.c' "$EDGEAI_CMAKELISTS"; then
-    echo "[patch] fix: add src/sw_render.c to edgeai_sand_demo CMakeLists"
-    perl -0777 -pi -e 's/(SOURCES\\s+src\\/edgeai_sand_demo\\.c\\s+\\s*src\\/fxls8974cf\\.c\\s+\\s*src\\/par_lcd_s035\\.c\\s+)/$1            src\\/sw_render\\.c\\n            /m' "$EDGEAI_CMAKELISTS" || true
-  fi
+  echo "[patch] fix: normalize edgeai_sand_demo CMakeLists sources"
+  perl -0777 -pi -e 's|(mcux_add_source\\(\\s+BASE_PATH \\$\\{EDGEAI_ROOT\\}\\s+SOURCES)(.*?)(\\)\\s+mcux_add_include)|$1\\n            src\\/edgeai_sand_demo\\.c\\n            src\\/text5x7\\.c\\n            src\\/accel_proc\\.c\\n            src\\/sim_world\\.c\\n            src\\/render_world\\.c\\n            src\\/npu_api\\.c\\n            src\\/npu_backend_stub\\.c\\n            src\\/npu_backend_neutron\\.cpp\\n            src\\/sand_sim\\.c\\n            src\\/water_sim\\.c\\n            src\\/fxls8974cf\\.c\\n            src\\/par_lcd_s035\\.c\\n            src\\/sw_render\\.c\\n            src\\/npu\\/model\\.cpp\\n            src\\/npu\\/model_ops_npu\\.cpp\\n)\\n\\nmcux_add_include|ms' "$EDGEAI_CMAKELISTS" || true
 fi

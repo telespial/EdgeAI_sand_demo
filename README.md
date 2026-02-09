@@ -39,6 +39,21 @@ Key folders:
 4. Flash (requires NXP LinkServer installed): `./tools/flash_frdmmcxn947.sh`
 5. Install repo guardrails (optional): `./tools/install_git_hooks.sh`
 
+## Tested Host Versions
+- Ubuntu: 24.04 LTS
+- West: v1.5.0
+- Ninja: 1.13.0
+- Toolchain: xPack GNU Arm Embedded GCC 14.2.1
+- LinkServer: v25.12.83
+
+## Run Validation Checklist
+- LCD: boot shows a centered `SAND DUNE` title for ~3 seconds, then transitions to the dune background + ball.
+- Motion: ball responds to tilt; trails follow the ball.
+- HUD: top-right text shows `C:###` (FPS) and NPU status.
+  - `B:S` stub backend, `B:N` neutron backend
+  - `N:1` backend init ok
+  - `I:1` NPU step enabled (`EDGEAI_ENABLE_NPU_INFERENCE=1`)
+
 Serial output (optional):
 - `timeout 10 cat /dev/ttyACM0`
 
@@ -64,12 +79,19 @@ Comments and docs are required to avoid conversational phrasing and direct reade
 - Rules: `docs/STYLE_RULES.md`
 - Lint: `./tools/lint_text_style.sh`
 
+## Docs Entry Point
+- `docs/START_HERE.md`
+
 ## NPU Notes
 By default, the firmware initializes the NPU stack but does not run inference (to avoid any platform-specific stalls).
-To enable inference, set `EDGEAI_ENABLE_NPU_INFERENCE=1` in `src/edgeai_sand_demo.c` and rebuild.
+To enable NPU steps, set `EDGEAI_ENABLE_NPU_INFERENCE=1` and rebuild.
+
+Backend selection is compile-time:
+- Stub backend: `EDGEAI_NPU_BACKEND=0` (procedural modulation)
+- Neutron backend: `EDGEAI_NPU_BACKEND=1` (TFLM + Neutron)
 
 ## Tuning / Orientation
-Accel axis mapping macros live in `src/edgeai_sand_demo.c`:
+Accel axis mapping macros live in `src/accel_proc.h`:
 - `EDGEAI_ACCEL_SWAP_XY`
 - `EDGEAI_ACCEL_INVERT_X`
 - `EDGEAI_ACCEL_INVERT_Y`

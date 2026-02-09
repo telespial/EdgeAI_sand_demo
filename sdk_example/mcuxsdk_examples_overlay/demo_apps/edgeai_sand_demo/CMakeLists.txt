@@ -17,6 +17,15 @@ endif()
 mcux_add_source(
     BASE_PATH ${EDGEAI_ROOT}
     SOURCES src/edgeai_sand_demo.c
+            src/text5x7.c
+            src/accel_proc.c
+            src/sim_world.c
+            src/render_world.c
+            src/npu_api.c
+            src/npu_backend_stub.c
+            src/npu_backend_neutron.cpp
+            src/sand_sim.c
+            src/water_sim.c
             src/fxls8974cf.c
             src/par_lcd_s035.c
             src/sw_render.c
