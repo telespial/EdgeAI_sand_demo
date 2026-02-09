@@ -6,10 +6,13 @@ This document records the "known-good" interactive moment:
 - Visual: shaded silver ball with shadow + trails, smooth tilt response
 - NPU: eIQ Neutron NPU used via TFLM Neutron backend; model output modulates specular glint
 
-## Golden Revision Pointer
-Return here if anything breaks:
+## Milestone Revision Pointer
+Return here if you specifically want the original 2026-02-08 raster + NPU glint milestone:
 - Tag: `milestone_raster_flicker_npu_v9`
 - Commit: `5d569d4352fc723f6d6d567dcdd3c46f58025fd4`
+
+Note:
+- The current project-wide golden restore point is tracked in `docs/RESTORE_POINTS.md`.
 
 ## Build + Flash
 From repo root:

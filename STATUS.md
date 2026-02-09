@@ -5,8 +5,8 @@
 
 ## Golden Revision
 If anything regresses, return to:
-- Tag: `milestone_raster_flicker_npu_v9`
-- Commit: `5d569d4352fc723f6d6d567dcdd3c46f58025fd4`
+- Tag: `GOLDEN_2026-02-09_v11_autopaint_then_accel`
+- Commit: `git rev-parse GOLDEN_2026-02-09_v11_autopaint_then_accel`
 
 ## Last Run
 - Date: 2026-02-08

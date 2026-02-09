@@ -106,6 +106,14 @@ WS_DIR="$PWD/mcuxsdk_ws_test" ./tools/flash_frdmmcxn947.sh
 - Behavior: after the boot title, drives the ball toward random unvisited screen cells until the whole screen has dune background rendered (no black remains), then initializes/enables accelerometer input.
 - Notes: uses a coarse coverage grid + final full-screen dune sweep to guarantee full coverage before handoff.
 
+### 2026-02-09 Golden v11 (Boot Title + Autopaint + Accel Handoff)
+- Tag: `GOLDEN_2026-02-09_v11_autopaint_then_accel`
+- Lock tag: `GOLDEN_LOCK_2026-02-09_v11_*` (includes SHA in name; do not move)
+- Commit: `git rev-parse GOLDEN_2026-02-09_v11_autopaint_then_accel`
+- Hardware: FRDM-MCXN947 + PAR-LCD-S035 + Accel 4 Click (FXLS8974CF over mikroBUS/I2C)
+- Behavior: boots black, shows “SAND DUNE” for ~3s, then autopaints the dune background until fully rendered (no black remains), then starts taking input from the accelerometer for normal operation.
+- Notes: this is the current golden restore point.
+
 ## Template (Copy/Paste)
 ### YYYY-MM-DD Short Name
 - Tag: `TAG_NAME`
