@@ -29,7 +29,7 @@ typedef struct
  * Default is disabled; enable only after the selected backend is validated.
  */
 #ifndef EDGEAI_ENABLE_NPU_INFERENCE
-#define EDGEAI_ENABLE_NPU_INFERENCE 0
+#define EDGEAI_ENABLE_NPU_INFERENCE 1
 #endif
 
 /* Backend selection: 0=stub, 1=neutron(TFLM+LinkServer). */
@@ -42,4 +42,3 @@ char edgeai_npu_backend_char(void);
 
 bool edgeai_npu_init(edgeai_npu_state_t *s);
 bool edgeai_npu_step(edgeai_npu_state_t *s, const edgeai_npu_input_t *in, edgeai_npu_output_t *out);
-
