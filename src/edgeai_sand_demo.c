@@ -156,6 +156,95 @@ static int32_t clamp_i32_sym(int32_t v, int32_t limit_abs)
     return v;
 }
 
+static const uint8_t *edgeai_glyph5x7(char c)
+{
+    /* Each glyph is 7 rows, 5 bits wide, MSB-first in the low 5 bits (bit 4..0). */
+    static const uint8_t SPACE[7] = {0, 0, 0, 0, 0, 0, 0};
+    static const uint8_t A[7] = {0x0E, 0x11, 0x11, 0x1F, 0x11, 0x11, 0x11};
+    static const uint8_t D[7] = {0x1E, 0x11, 0x11, 0x11, 0x11, 0x11, 0x1E};
+    static const uint8_t E[7] = {0x1F, 0x10, 0x10, 0x1E, 0x10, 0x10, 0x1F};
+    static const uint8_t N[7] = {0x11, 0x19, 0x15, 0x13, 0x11, 0x11, 0x11};
+    static const uint8_t S[7] = {0x0F, 0x10, 0x10, 0x0E, 0x01, 0x01, 0x1E};
+    static const uint8_t U[7] = {0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x0E};
+
+    switch (c)
+    {
+        case 'A': return A;
+        case 'D': return D;
+        case 'E': return E;
+        case 'N': return N;
+        case 'S': return S;
+        case 'U': return U;
+        case ' ': return SPACE;
+        default: return SPACE;
+    }
+}
+
+static void edgeai_draw_char5x7_scaled(int32_t x, int32_t y, int32_t scale, char c, uint16_t color)
+{
+    const uint8_t *g = edgeai_glyph5x7(c);
+    if (scale < 1) scale = 1;
+
+    for (int32_t row = 0; row < 7; row++)
+    {
+        uint8_t bits = g[row];
+        for (int32_t col = 0; col < 5; col++)
+        {
+            if (bits & (1u << (4 - col)))
+            {
+                int32_t x0 = x + col * scale;
+                int32_t y0 = y + row * scale;
+                par_lcd_s035_fill_rect(x0, y0, x0 + scale - 1, y0 + scale - 1, color);
+            }
+        }
+    }
+}
+
+static void edgeai_draw_text5x7_scaled(int32_t x, int32_t y, int32_t scale, const char *s, uint16_t color)
+{
+    int32_t cx = x;
+    while (*s)
+    {
+        edgeai_draw_char5x7_scaled(cx, y, scale, *s, color);
+        cx += (5 + 1) * scale;
+        s++;
+    }
+}
+
+static int32_t edgeai_text5x7_w(int32_t scale, const char *s)
+{
+    int32_t n = 0;
+    while (s[n]) n++;
+    if (n == 0) return 0;
+    return n * (5 + 1) * scale - 1 * scale; /* last char doesn't need trailing space */
+}
+
+static void edgeai_draw_boot_title_sand_dune(void)
+{
+    const int32_t scale = 7;
+    const char *l1 = "SAND";
+    const char *l2 = "DUNE";
+
+    int32_t w1 = edgeai_text5x7_w(scale, l1);
+    int32_t w2 = edgeai_text5x7_w(scale, l2);
+    int32_t w = (w1 > w2) ? w1 : w2;
+    int32_t h = 2 * (7 * scale) + (2 * scale);
+
+    int32_t x = (LCD_W - w) / 2;
+    int32_t y = (LCD_H - h) / 2;
+
+    /* Simple 3D look: shadow then face. */
+    const int32_t ox = 4;
+    const int32_t oy = 4;
+    const uint16_t shadow = 0x2104u; /* dark gray */
+    const uint16_t face = 0xFFDEu;   /* warm white */
+
+    edgeai_draw_text5x7_scaled(x + ox, y + oy, scale, l1, shadow);
+    edgeai_draw_text5x7_scaled(x + ox, y + oy + (7 * scale) + (2 * scale), scale, l2, shadow);
+    edgeai_draw_text5x7_scaled(x, y, scale, l1, face);
+    edgeai_draw_text5x7_scaled(x, y + (7 * scale) + (2 * scale), scale, l2, face);
+}
+
 int main(void)
 {
     BOARD_InitHardware();
@@ -168,6 +257,9 @@ int main(void)
         for (;;) {}
     }
     par_lcd_s035_fill(0x0000u); /* boot stays black (dune reveals as you roll) */
+    edgeai_draw_boot_title_sand_dune();
+    SDK_DelayAtLeastUs(3000000u, SDK_DEVICE_MAXIMUM_CPU_CLOCK_FREQUENCY);
+    par_lcd_s035_fill(0x0000u);
 
     /* Print banner early; previous hangs made it hard to tell if firmware was alive. */
     PRINTF("EDGEAI: boot %s %s\r\n", __DATE__, __TIME__);

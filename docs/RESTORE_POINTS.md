@@ -75,6 +75,13 @@ WS_DIR="$PWD/mcuxsdk_ws_test" ./tools/flash_frdmmcxn947.sh
 - Behavior: initializes LCD early, prints boot banner early, retries accel WHO_AM_I for ~2s, and continues running if accel is missing (so the display doesn’t look “frozen”).
 - Notes: if ball is stuck, check UART for `EDGEAI: accel ok addr=0x18` (or 0x19). If you see “not found”, reseat the clickboard / verify I2C mode.
 
+### 2026-02-09 Boot Title “SAND DUNE” (3s Hold)
+- Tag: `milestone_boot_title_sand_dune_3s_v1`
+- Commit: (set when tagged)
+- Hardware: FRDM-MCXN947 + PAR-LCD-S035 + Accel 4 Click (FXLS8974CF over mikroBUS/I2C)
+- Behavior: after LCD clears to black at boot, shows “SAND DUNE” centered for ~3 seconds, then clears back to black and proceeds into the normal accel-driven loop.
+- Notes: this is intentionally minimal; it does not change the dune “tile reveal” rendering behavior.
+
 ## Template (Copy/Paste)
 ### YYYY-MM-DD Short Name
 - Tag: `TAG_NAME`
