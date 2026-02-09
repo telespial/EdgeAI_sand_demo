@@ -143,6 +143,14 @@ WS_DIR="$PWD/mcuxsdk_ws_test" ./tools/flash_frdmmcxn947.sh
 - Behavior: avoids a post-title black-screen freeze by gating NPU model init behind `EDGEAI_ENABLE_NPU_INFERENCE`.
 - Notes: keep `EDGEAI_ENABLE_NPU_INFERENCE=0` unless the model init path is verified stable on the connected board.
 
+### 2026-02-09 Golden (Current): Architecture Refactor (Sim/Render/NPU Boundaries)
+- Tag: `GOLDEN_2026-02-09_v20_arch_refactor`
+- Lock tag: `GOLDEN_LOCK_2026-02-09_v20_*` (includes SHA in name; do not move)
+- Commit: `git rev-parse GOLDEN_2026-02-09_v20_arch_refactor`
+- Hardware: FRDM-MCXN947 + PAR-LCD-S035 + Accel 4 Click (FXLS8974CF over mikroBUS/I2C)
+- Behavior: refactors the demo into explicit accel processing, simulation step, world rendering, and NPU backend modules.
+- Notes: NPU backend selection is compile-time (`EDGEAI_NPU_BACKEND`); NPU stepping remains gated behind `EDGEAI_ENABLE_NPU_INFERENCE`.
+
 ## Template (Copy/Paste)
 ### YYYY-MM-DD Short Name
 - Tag: `TAG_NAME`
