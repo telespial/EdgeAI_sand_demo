@@ -3,6 +3,7 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 WS_DIR="${WS_DIR:-$ROOT_DIR/mcuxsdk_ws}"
+BUILD_DIR="${BUILD_DIR:-$WS_DIR/build}"
 BUILD_TYPE="${1:-debug}"
 
 # shellcheck disable=SC1090
@@ -18,11 +19,14 @@ fi
 
 (
   cd "$WS_DIR"
-  west build -p always mcuxsdk/examples/demo_apps/edgeai_sand_demo \
+  # NOTE: `-p always` is avoided due to a known pristine invocation failure in
+  # some MCUX west environments (BINARY_DIR/SOURCE_DIR passed as None).
+  # Use a unique `BUILD_DIR` for a clean build when needed.
+  west build -d "$BUILD_DIR" mcuxsdk/examples/demo_apps/edgeai_sand_demo \
     --toolchain armgcc \
     --config "$BUILD_TYPE" \
     -b frdmmcxn947 \
     -Dcore_id=cm33_core0
 )
 
-echo "Built: $WS_DIR/build/edgeai_sand_demo_cm33_core0.bin"
+echo "Built: $BUILD_DIR/edgeai_sand_demo_cm33_core0.bin"

@@ -151,6 +151,14 @@ WS_DIR="$PWD/mcuxsdk_ws_test" ./tools/flash_frdmmcxn947.sh
 - Behavior: refactors the demo into explicit accel processing, simulation step, world rendering, and NPU backend modules.
 - Notes: NPU backend selection is compile-time (`EDGEAI_NPU_BACKEND`); NPU stepping remains gated behind `EDGEAI_ENABLE_NPU_INFERENCE`.
 
+### 2026-02-09 Golden (Current): HUD Backend + Glyph Coverage
+- Tag: `GOLDEN_2026-02-09_v21_hud_backend_glyphs`
+- Lock tag: `GOLDEN_LOCK_2026-02-09_v21_a7ebef3` (includes SHA in name; do not move)
+- Commit: `a7ebef3b2697bce0b3cd6008e11b26c2ca6d4310`
+- Hardware: FRDM-MCXN947 + PAR-LCD-S035 + Accel 4 Click (FXLS8974CF over mikroBUS/I2C)
+- Behavior: preserves the dune background + tilt ball demo and adds a stable HUD renderer path (upper-right text) with expanded 5x7 glyph coverage.
+- Notes: baseline restore point for continued work; do not move this tag or its lock.
+
 ## Template (Copy/Paste)
 ### YYYY-MM-DD Short Name
 - Tag: `TAG_NAME`

@@ -31,6 +31,10 @@ This creates `./mcuxsdk_ws/`, runs `west init` + `west update`, then installs th
 Build output:
 - `mcuxsdk_ws/build/edgeai_sand_demo_cm33_core0.bin`
 
+Notes:
+- Set `BUILD_DIR` to use a non-default build directory (for example, `BUILD_DIR=./mcuxsdk_ws/build_alt ./tools/build_frdmmcxn947.sh`).
+- For a clean rebuild, use a fresh `BUILD_DIR` or remove the existing build directory contents.
+
 ## 4) Flash
 
 Flashing uses NXP LinkServer (x86_64) via `west flash -r linkserver`.

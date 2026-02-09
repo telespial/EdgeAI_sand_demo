@@ -3,6 +3,7 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 WS_DIR="${WS_DIR:-$ROOT_DIR/mcuxsdk_ws}"
+BUILD_DIR="${BUILD_DIR:-$WS_DIR/build}"
 
 # shellcheck disable=SC1090
 source "$ROOT_DIR/tools/mcux_env.sh"
@@ -21,6 +22,5 @@ fi
 
 (
   cd "$WS_DIR"
-  west flash -r linkserver
+  west flash -d "$BUILD_DIR" -r linkserver
 )
-

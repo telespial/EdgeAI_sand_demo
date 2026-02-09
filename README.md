@@ -15,13 +15,13 @@ Current rendering notes:
 
 ## Known-Good Revision (Golden)
 If anything breaks, return to this exact revision:
-- Current golden tag: `GOLDEN_2026-02-09_v20_arch_refactor`
-- Commit: `git rev-parse GOLDEN_2026-02-09_v20_arch_refactor`
+- Current golden tag: `GOLDEN_2026-02-09_v21_hud_backend_glyphs`
+- Commit: `git rev-parse GOLDEN_2026-02-09_v21_hud_backend_glyphs`
 - Baseline golden (older): `milestone_raster_flicker_npu_v9` @ `5d569d4352fc723f6d6d567dcdd3c46f58025fd4`
 
 Checkout + rebuild + flash:
 ```bash
-git checkout GOLDEN_2026-02-09_v20_arch_refactor
+git checkout GOLDEN_2026-02-09_v21_hud_backend_glyphs
 MCUX_EXAMPLES_DIR="$PWD/mcuxsdk_ws_test/mcuxsdk/examples" ./sdk_example/install_mcux_overlay.sh
 ninja -C mcuxsdk_ws_test/build
 WS_DIR="$PWD/mcuxsdk_ws_test" ./tools/flash_frdmmcxn947.sh
