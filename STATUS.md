@@ -5,14 +5,14 @@
 
 ## Golden Revision
 If anything regresses, return to:
-- Current golden tag: `GOLDEN_2026-02-09_v23_ball_polish_a1_a4`
-- Commit: `git rev-parse GOLDEN_2026-02-09_v23_ball_polish_a1_a4`
+- Current golden tag: `GOLDEN_2026-02-09_v24_3d_lift_motion`
+- Commit: `git rev-parse GOLDEN_2026-02-09_v24_3d_lift_motion`
 - Baseline golden (older): `milestone_raster_flicker_npu_v9` @ `5d569d4352fc723f6d6d567dcdd3c46f58025fd4`
 
 ## Last Run
 - Date: 2026-02-09
-- Result: build + flash ok; LCD shows dune background + shaded "silver ball" with trails; impacts cause visible kicks
-- Binary: `mcuxsdk_ws/build_v22_a3/edgeai_sand_demo_cm33_core0.bin`
+- Result: build + flash ok; LCD shows dune background + shaded "silver ball" with trails and vertical-motion lift depth cue
+- Binary: `mcuxsdk_ws/build_v24_3d_motion/edgeai_sand_demo_cm33_core0.bin`
 - Notes:
   - NPU stack integrated (TFLM + Neutron backend). NPU stepping is compile-time gated (see `EDGEAI_ENABLE_NPU_INFERENCE` in `src/npu_api.h`).
   - Accel debug prints available on VCOM (`/dev/ttyACM0`)

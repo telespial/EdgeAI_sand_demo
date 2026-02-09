@@ -175,6 +175,14 @@ WS_DIR="$PWD/mcuxsdk_ws_test" ./tools/flash_frdmmcxn947.sh
 - Behavior: draws full dune background after title; bounce bounds match perspective radius; no stuck trail dots when dirty-rect clamps; table taps produce a visible velocity kick; per-second timing instrumentation enabled.
 - Notes: this is the preferred restore point for continued work on the sandbox demo.
 
+### 2026-02-09 Golden (Current): 3D Lift (Vertical Motion Depth Cue)
+- Tag: `GOLDEN_2026-02-09_v24_3d_lift_motion`
+- Lock tag: `GOLDEN_LOCK_2026-02-09_v24_*` (includes SHA in name; do not move)
+- Commit: `git rev-parse GOLDEN_2026-02-09_v24_3d_lift_motion`
+- Hardware: FRDM-MCXN947 + PAR-LCD-S035 + Accel 4 Click (FXLS8974CF over mikroBUS/I2C)
+- Behavior: adds a third-dimension depth cue. The ball lifts up/down relative to its shadow based on vertical motion (accel magnitude high-pass). Ball size and shadow intensity vary with lift; UART debug includes `gmag`, `ghp`, and `lift`.
+- Notes: stable baseline for continuing NPU post-process and gesture work.
+
 ## Template (Copy/Paste)
 ### YYYY-MM-DD Short Name
 - Tag: `TAG_NAME`
