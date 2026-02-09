@@ -336,7 +336,6 @@ void par_lcd_s035_draw_ball_shadow(int32_t cx, int32_t cy, int32_t r)
 
 void par_lcd_s035_draw_silver_ball(int32_t cx, int32_t cy, int32_t r, uint32_t frame, uint8_t glint)
 {
-    (void)frame;
     if (r <= 0) return;
 
     /* Ray-traced sphere shading for a single object (analytic ray/sphere). */
@@ -348,8 +347,11 @@ void par_lcd_s035_draw_silver_ball(int32_t cx, int32_t cy, int32_t r, uint32_t f
     static uint16_t line[EDGEAI_LCD_WIDTH];
 
     /* Light direction (normalized-ish) in Q14. */
-    const int32_t Lx = -6553;  /* -0.4 */
-    const int32_t Ly = -9830;  /* -0.6 */
+    uint8_t phase = (uint8_t)((frame >> 16) & 0xFFu);
+    int32_t tri = (phase < 128u) ? (int32_t)phase : (int32_t)(255u - phase);
+    int32_t wob = (tri - 64) * 120; /* small wobble */
+    const int32_t Lx = -6553 + wob;
+    const int32_t Ly = -9830 - (wob / 2);
     const int32_t Lz = 11469;  /*  0.7 */
 
     const uint32_t r2 = (uint32_t)(r * r);

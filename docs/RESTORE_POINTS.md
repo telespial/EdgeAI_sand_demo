@@ -103,6 +103,14 @@ WS_DIR="$PWD/mcuxsdk_ws_test" ./tools/flash_frdmmcxn947.sh
 - Behavior: same firmware behavior as v13; code/docs updated to remove conversational phrasing and direct references to a reader.
 - Notes: this tag is the preferred restore point for continued development.
 
+### 2026-02-09 Golden (Current): NPU-Driven Visual Modulation
+- Tag: `GOLDEN_2026-02-09_v16_npu_visuals`
+- Lock tag: `GOLDEN_LOCK_2026-02-09_v16_*` (includes SHA in name; do not move)
+- Commit: `git rev-parse GOLDEN_2026-02-09_v16_npu_visuals`
+- Hardware: FRDM-MCXN947 + PAR-LCD-S035 + Accel 4 Click (FXLS8974CF over mikroBUS/I2C)
+- Behavior: NPU inference enabled by default (period `EDGEAI_NPU_PERIOD_US`) and used to modulate rendering (background warmth/grain, ball light wobble via NPU phase).
+- Notes: disable NPU inference with `-DEDGEAI_ENABLE_NPU_INFERENCE=0` if needed for stability checks.
+
 ## Template (Copy/Paste)
 ### YYYY-MM-DD Short Name
 - Tag: `TAG_NAME`

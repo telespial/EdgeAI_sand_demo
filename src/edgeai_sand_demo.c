@@ -73,8 +73,28 @@ static int32_t edgeai_ball_r_for_y(int32_t cy)
 
 /* NPU: keep init enabled, but inference can be disabled if it blocks on a given setup. */
 #ifndef EDGEAI_ENABLE_NPU_INFERENCE
-#define EDGEAI_ENABLE_NPU_INFERENCE 0
+#define EDGEAI_ENABLE_NPU_INFERENCE 1
 #endif
+
+#ifndef EDGEAI_NPU_PERIOD_US
+#define EDGEAI_NPU_PERIOD_US 66667u
+#endif
+
+#ifndef EDGEAI_NPU_MAX_CONSEC_FAIL
+#define EDGEAI_NPU_MAX_CONSEC_FAIL 4u
+#endif
+
+typedef struct
+{
+    uint32_t npu_last_us;
+    uint32_t npu_consec_fail;
+    uint8_t npu_phase;
+    uint8_t npu_warm;
+    uint8_t npu_grain;
+    uint8_t glint;
+} edgeai_debug_state_t;
+
+volatile edgeai_debug_state_t g_edgeai_debug_state;
 
 /* Rendering mode:
  * - 0: "raster/flicker" mode: draw primitives directly to LCD using many small writes
@@ -320,6 +340,20 @@ int main(void)
         out_data = EDGEAI_MODEL_GetOutputTensorData(&out_dims, &out_type);
         npu_ok = (in_data != NULL) && (out_data != NULL);
     }
+    if (npu_ok)
+    {
+        PRINTF("EDGEAI: npu in_type=%u in_dims=%u,%u,%u,%u out_type=%u out_dims=%u,%u,%u,%u\r\n",
+               (unsigned)in_type,
+               (unsigned)(in_dims.size > 0 ? in_dims.data[0] : 0),
+               (unsigned)(in_dims.size > 1 ? in_dims.data[1] : 0),
+               (unsigned)(in_dims.size > 2 ? in_dims.data[2] : 0),
+               (unsigned)(in_dims.size > 3 ? in_dims.data[3] : 0),
+               (unsigned)out_type,
+               (unsigned)(out_dims.size > 0 ? out_dims.data[0] : 0),
+               (unsigned)(out_dims.size > 1 ? out_dims.data[1] : 0),
+               (unsigned)(out_dims.size > 2 ? out_dims.data[2] : 0),
+               (unsigned)(out_dims.size > 3 ? out_dims.data[3] : 0));
+    }
 
     /* Ball state (Q16.16 pixels). */
     int32_t x_q16 = (LCD_W / 2) << 16;
@@ -344,8 +378,13 @@ int main(void)
     uint32_t last_cyc = DWT->CYCCNT;
     uint32_t frame = 0;
     uint8_t glint = 0;
+    uint8_t npu_phase = 0;
+    uint8_t npu_warm = 128;
+    uint8_t npu_grain = 0;
     uint32_t accel_fail = 0;
     uint32_t npu_accum_us = 0;
+    uint32_t npu_last_us = 0;
+    uint32_t npu_consec_fail = 0;
     uint32_t stats_accum_us = 0;
     uint32_t stats_frames = 0;
 
@@ -380,6 +419,13 @@ int main(void)
 
     for (;;)
     {
+        g_edgeai_debug_state.glint = glint;
+        g_edgeai_debug_state.npu_phase = npu_phase;
+        g_edgeai_debug_state.npu_warm = npu_warm;
+        g_edgeai_debug_state.npu_grain = npu_grain;
+        g_edgeai_debug_state.npu_last_us = npu_last_us;
+        g_edgeai_debug_state.npu_consec_fail = npu_consec_fail;
+
         bool accel_ok = false;
         if (found)
         {
@@ -575,7 +621,7 @@ int main(void)
 
 #if EDGEAI_RENDER_SINGLE_BLIT
             /* Render into tile (black background) then blit once to avoid flicker/tearing lines. */
-            sw_render_dune_bg(tile, (uint32_t)w, (uint32_t)h, x0, y0);
+            sw_render_dune_bg_mod(tile, (uint32_t)w, (uint32_t)h, x0, y0, npu_warm, npu_grain, frame);
 
             /* Trails (streaks). */
             for (int i = 0; i < TRAIL_N; i++)
@@ -585,12 +631,15 @@ int main(void)
                 int32_t ty = trail_y[idx];
                 int r0 = 1 + (i / 6);
                 uint16_t c = (i < 6) ? 0x39E7u : 0x18C3u;
+                if (npu_warm > 160u) c = (i < 6) ? 0x4208u : 0x2104u;
                 sw_render_filled_circle(tile, (uint32_t)w, (uint32_t)h, x0, y0, tx, ty, r0, c);
             }
 
             /* Depth cue: scale the ball/shadow with y-position. */
             sw_render_ball_shadow(tile, (uint32_t)w, (uint32_t)h, x0, y0, cx, cy, r_draw);
-            sw_render_silver_ball(tile, (uint32_t)w, (uint32_t)h, x0, y0, cx, cy, r_draw, frame++, glint);
+            uint32_t vis_seed = (frame & 0xFFFFu) | ((uint32_t)npu_phase << 16) | ((uint32_t)npu_warm << 24);
+            sw_render_silver_ball(tile, (uint32_t)w, (uint32_t)h, x0, y0, cx, cy, r_draw, vis_seed, glint);
+            frame++;
 
             par_lcd_s035_blit_rect(x0, y0, x1, y1, tile);
 #else
@@ -611,7 +660,9 @@ int main(void)
 
             /* Depth cue: scale the ball/shadow with y-position. */
             par_lcd_s035_draw_ball_shadow(cx, cy, r_draw);
-            par_lcd_s035_draw_silver_ball(cx, cy, r_draw, frame++, glint);
+            uint32_t vis_seed = (frame & 0xFFFFu) | ((uint32_t)npu_phase << 16) | ((uint32_t)npu_warm << 24);
+            par_lcd_s035_draw_silver_ball(cx, cy, r_draw, vis_seed, glint);
+            frame++;
 #endif
 
             prev_x = cx;
@@ -619,32 +670,43 @@ int main(void)
             stats_frames++;
         }
 
-        /* NPU hook: run a Neutron-backed TFLM model at a low rate and use output to modulate "glint". */
-        if (EDGEAI_ENABLE_NPU_INFERENCE && npu_ok && (npu_accum_us >= 200000u))
+        /* NPU hook: run a Neutron-backed TFLM model and use output to modulate rendering. */
+        if (EDGEAI_ENABLE_NPU_INFERENCE && npu_ok && (npu_accum_us >= EDGEAI_NPU_PERIOD_US))
         {
             npu_accum_us = 0;
 
-            /* Fill input tensor with a synthetic pattern derived from motion/tilt.
-             * This is a placeholder input; replace with real features later.
-             */
+            /* Fill input tensor with a compact feature stream derived from motion/tilt. */
             uint32_t n = 1;
             if (in_dims.size >= 2) n = in_dims.data[1];
             if (in_dims.size >= 3) n *= in_dims.data[2];
             if (in_dims.size >= 4) n *= in_dims.data[3];
 
-            uint8_t base = 127u;
-            uint8_t amp = (uint8_t)clamp_i32((int32_t)((vx_q16 < 0 ? -vx_q16 : vx_q16) >> 16) +
-                                             (int32_t)((vy_q16 < 0 ? -vy_q16 : vy_q16) >> 16), 0, 80);
+            uint8_t f0 = (uint8_t)clamp_i32((cx * 255) / (LCD_W - 1), 0, 255);
+            uint8_t f1 = (uint8_t)clamp_i32((cy * 255) / (LCD_H - 1), 0, 255);
+            uint8_t f2 = (uint8_t)clamp_i32(((vx_q16 >> 16) + 128), 0, 255);
+            uint8_t f3 = (uint8_t)clamp_i32(((vy_q16 >> 16) + 128), 0, 255);
+            uint8_t f4 = (uint8_t)clamp_i32((ax_lp + (ACCEL_MAP_DENOM * 2)) * 255 / (ACCEL_MAP_DENOM * 4), 0, 255);
+            uint8_t f5 = (uint8_t)clamp_i32((ay_lp + (ACCEL_MAP_DENOM * 2)) * 255 / (ACCEL_MAP_DENOM * 4), 0, 255);
+            uint8_t f6 = (uint8_t)(frame & 0xFFu);
+            uint8_t f7 = (uint8_t)((frame >> 8) & 0xFFu);
+            uint8_t feat[8] = {f0, f1, f2, f3, f4, f5, f6, f7};
             for (uint32_t i = 0; i < n; i++)
             {
-                /* simple repeating waveform */
-                uint8_t t = (uint8_t)(i & 31u);
-                uint8_t v = (t < 16u) ? (uint8_t)(base + (amp * t) / 16u) : (uint8_t)(base + (amp * (31u - t)) / 16u);
+                uint8_t v = feat[i & 7u];
+                /* LFSR-ish mixing so runs do not look static. */
+                v ^= (uint8_t)((i * 73u) ^ (frame & 0xFFu));
                 in_data[i] = v;
             }
 
+            uint32_t npu_t0 = DWT->CYCCNT;
             if (EDGEAI_MODEL_RunInference() == kStatus_Success)
             {
+                uint32_t npu_t1 = DWT->CYCCNT;
+                uint32_t dc_npu = npu_t1 - npu_t0;
+                uint32_t cps_npu = SystemCoreClock ? SystemCoreClock : 150000000u;
+                npu_last_us = (cps_npu == 0u) ? 0u : (uint32_t)(((uint64_t)dc_npu * 1000000u) / (uint64_t)cps_npu);
+                npu_consec_fail = 0;
+
                 /* Convert model output to 0..255. */
                 uint32_t m = 0;
                 uint32_t out_n = 1;
@@ -658,6 +720,10 @@ int main(void)
                 {
                     for (uint32_t i = 0; i < out_n; i++) if (out_data[i] > m) m = out_data[i];
                     glint = (uint8_t)m;
+                    npu_phase = (uint8_t)out_data[0];
+                    if (out_n > 1) npu_phase = (uint8_t)out_data[1];
+                    if (out_n > 2) npu_warm = (uint8_t)out_data[2];
+                    if (out_n > 3) npu_grain = (uint8_t)out_data[3];
                 }
                 else if (out_type == kEdgeAiTensorType_INT8)
                 {
@@ -665,6 +731,10 @@ int main(void)
                     int32_t mm = -128;
                     for (uint32_t i = 0; i < out_n; i++) if ((int32_t)p[i] > mm) mm = (int32_t)p[i];
                     glint = (uint8_t)clamp_i32(mm + 128, 0, 255);
+                    npu_phase = (uint8_t)clamp_i32((int32_t)p[0] + 128, 0, 255);
+                    if (out_n > 1) npu_phase = (uint8_t)clamp_i32((int32_t)p[1] + 128, 0, 255);
+                    if (out_n > 2) npu_warm = (uint8_t)clamp_i32((int32_t)p[2] + 128, 0, 255);
+                    if (out_n > 3) npu_grain = (uint8_t)clamp_i32((int32_t)p[3] + 128, 0, 255);
                 }
                 else
                 {
@@ -675,6 +745,29 @@ int main(void)
                     if (mm < 0.0f) mm = 0.0f;
                     if (mm > 1.0f) mm = 1.0f;
                     glint = (uint8_t)(mm * 255.0f);
+                    float v0 = p[0];
+                    float v1 = (out_n > 1) ? p[1] : v0;
+                    float v2 = (out_n > 2) ? p[2] : 0.5f;
+                    float v3 = (out_n > 3) ? p[3] : 0.0f;
+                    if (v0 < 0.0f) v0 = 0.0f;
+                    if (v0 > 1.0f) v0 = 1.0f;
+                    if (v1 < 0.0f) v1 = 0.0f;
+                    if (v1 > 1.0f) v1 = 1.0f;
+                    if (v2 < 0.0f) v2 = 0.0f;
+                    if (v2 > 1.0f) v2 = 1.0f;
+                    if (v3 < 0.0f) v3 = 0.0f;
+                    if (v3 > 1.0f) v3 = 1.0f;
+                    npu_phase = (uint8_t)(v1 * 255.0f);
+                    npu_warm = (uint8_t)(v2 * 255.0f);
+                    npu_grain = (uint8_t)(v3 * 255.0f);
+                }
+            }
+            else
+            {
+                npu_consec_fail++;
+                if (npu_consec_fail >= EDGEAI_NPU_MAX_CONSEC_FAIL)
+                {
+                    npu_ok = false;
                 }
             }
         }
@@ -692,6 +785,11 @@ int main(void)
                    (int)(vx_q16 >> 16), (int)(vy_q16 >> 16),
                    (unsigned)glint,
                    (unsigned)(npu_ok ? 1u : 0u));
+            PRINTF("EDGEAI: npu phase=%u warm=%u grain=%u invoke_us=%u\r\n",
+                   (unsigned)npu_phase,
+                   (unsigned)npu_warm,
+                   (unsigned)npu_grain,
+                   (unsigned)npu_last_us);
         }
     }
 }

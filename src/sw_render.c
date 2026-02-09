@@ -68,6 +68,85 @@ void sw_render_dune_bg(uint16_t *dst, uint32_t w, uint32_t h,
     }
 }
 
+static inline uint32_t sw_u32_hash(uint32_t x)
+{
+    /* Small integer hash for stable grain/noise. */
+    x ^= x >> 16;
+    x *= 0x7FEB352Du;
+    x ^= x >> 15;
+    x *= 0x846CA68Bu;
+    x ^= x >> 16;
+    return x;
+}
+
+static inline uint16_t sw_rgb565_warm_grain(uint16_t c, int32_t warm_delta, uint32_t n)
+{
+    /* Unpack RGB565. */
+    int32_t r = (int32_t)((c >> 11) & 0x1Fu);
+    int32_t g = (int32_t)((c >> 5) & 0x3Fu);
+    int32_t b = (int32_t)(c & 0x1Fu);
+
+    /* Grain in [-1..1] or [-2..2] depending on noise bits. */
+    int32_t gn = (int32_t)((n >> 28) & 3u) - 1;
+
+    /* Warmth shifts: warm_delta in [-8..8] applied in RGB565 space. */
+    r += (warm_delta >> 1) + gn;
+    g += warm_delta + (gn << 1);
+    b -= (warm_delta >> 1) - gn;
+
+    if (r < 0) r = 0;
+    if (r > 31) r = 31;
+    if (g < 0) g = 0;
+    if (g > 63) g = 63;
+    if (b < 0) b = 0;
+    if (b > 31) b = 31;
+
+    return (uint16_t)(((uint32_t)r << 11) | ((uint32_t)g << 5) | (uint32_t)b);
+}
+
+void sw_render_dune_bg_mod(uint16_t *dst, uint32_t w, uint32_t h,
+                           int32_t x0, int32_t y0,
+                           uint8_t warm, uint8_t grain, uint32_t seed)
+{
+    if (!dst || w == 0 || h == 0)
+    {
+        return;
+    }
+
+    /* Map warm/grain into small deltas to avoid overpowering the source texture. */
+    int32_t warm_delta = ((int32_t)warm - 128) / 16;   /* about [-8..7] */
+    uint32_t grain_mask = (grain >= 96u) ? 0xFFFFFFFFu : 0u;
+
+    for (uint32_t y = 0; y < h; y++)
+    {
+        int32_t gy = y0 + (int32_t)y;
+        if (gy < 0) gy = 0;
+        uint32_t ty = ((uint32_t)gy) >> 1;
+        if (ty >= DUNE_TEX_H) ty = DUNE_TEX_H - 1u;
+
+        const uint16_t *src = &g_dune_tex[ty * DUNE_TEX_W];
+        uint16_t *row = &dst[y * w];
+
+        for (uint32_t x = 0; x < w; x++)
+        {
+            int32_t gx = x0 + (int32_t)x;
+            if (gx < 0) gx = 0;
+            uint32_t tx = ((uint32_t)gx) >> 1;
+            if (tx >= DUNE_TEX_W) tx = DUNE_TEX_W - 1u;
+
+            uint16_t c = src[tx];
+
+            if (warm_delta != 0 || grain_mask != 0u)
+            {
+                uint32_t n = sw_u32_hash(seed ^ ((uint32_t)gx * 1315423911u) ^ ((uint32_t)gy * 2654435761u));
+                c = sw_rgb565_warm_grain(c, warm_delta, n & grain_mask);
+            }
+
+            row[x] = c;
+        }
+    }
+}
+
 void sw_render_filled_circle(uint16_t *dst, uint32_t w, uint32_t h,
                              int32_t x0, int32_t y0,
                              int32_t cx, int32_t cy, int32_t r, uint16_t rgb565)
@@ -149,7 +228,6 @@ void sw_render_silver_ball(uint16_t *dst, uint32_t w, uint32_t h,
                            int32_t x0, int32_t y0,
                            int32_t cx, int32_t cy, int32_t r, uint32_t frame, uint8_t glint)
 {
-    (void)frame;
     if (!dst || r <= 0) return;
 
     int32_t sx0 = cx - r;
@@ -158,8 +236,11 @@ void sw_render_silver_ball(uint16_t *dst, uint32_t w, uint32_t h,
     int32_t sy1 = cy + r;
 
     /* Light direction (normalized-ish) in Q14. */
-    const int32_t Lx = -6553;  /* -0.4 */
-    const int32_t Ly = -9830;  /* -0.6 */
+    uint8_t phase = (uint8_t)((frame >> 16) & 0xFFu);
+    int32_t tri = (phase < 128u) ? (int32_t)phase : (int32_t)(255u - phase);
+    int32_t wob = (tri - 64) * 120; /* small wobble */
+    const int32_t Lx = -6553 + wob;
+    const int32_t Ly = -9830 - (wob / 2);
     const int32_t Lz = 11469;  /*  0.7 */
 
     const uint32_t r2 = (uint32_t)(r * r);
