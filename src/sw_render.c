@@ -4,6 +4,78 @@
 
 #include "dune_bg.h"
 
+static const uint8_t *sw_glyph5x7(char c)
+{
+    static const uint8_t SPACE[7] = {0, 0, 0, 0, 0, 0, 0};
+    static const uint8_t COLON[7] = {0x00, 0x04, 0x04, 0x00, 0x04, 0x04, 0x00};
+
+    static const uint8_t C[7] = {0x0E, 0x11, 0x10, 0x10, 0x10, 0x11, 0x0E};
+    static const uint8_t I[7] = {0x0E, 0x04, 0x04, 0x04, 0x04, 0x04, 0x0E};
+    static const uint8_t N[7] = {0x11, 0x19, 0x15, 0x13, 0x11, 0x11, 0x11};
+
+    static const uint8_t D0[7] = {0x0E, 0x11, 0x13, 0x15, 0x19, 0x11, 0x0E};
+    static const uint8_t D1[7] = {0x04, 0x0C, 0x04, 0x04, 0x04, 0x04, 0x0E};
+    static const uint8_t D2[7] = {0x0E, 0x11, 0x01, 0x02, 0x04, 0x08, 0x1F};
+    static const uint8_t D3[7] = {0x1F, 0x02, 0x04, 0x02, 0x01, 0x11, 0x0E};
+    static const uint8_t D4[7] = {0x02, 0x06, 0x0A, 0x12, 0x1F, 0x02, 0x02};
+    static const uint8_t D5[7] = {0x1F, 0x10, 0x1E, 0x01, 0x01, 0x11, 0x0E};
+    static const uint8_t D6[7] = {0x06, 0x08, 0x10, 0x1E, 0x11, 0x11, 0x0E};
+    static const uint8_t D7[7] = {0x1F, 0x01, 0x02, 0x04, 0x08, 0x08, 0x08};
+    static const uint8_t D8[7] = {0x0E, 0x11, 0x11, 0x0E, 0x11, 0x11, 0x0E};
+    static const uint8_t D9[7] = {0x0E, 0x11, 0x11, 0x0F, 0x01, 0x02, 0x0C};
+
+    switch (c)
+    {
+        case 'C': return C;
+        case 'I': return I;
+        case 'N': return N;
+        case ':': return COLON;
+        case '0': return D0;
+        case '1': return D1;
+        case '2': return D2;
+        case '3': return D3;
+        case '4': return D4;
+        case '5': return D5;
+        case '6': return D6;
+        case '7': return D7;
+        case '8': return D8;
+        case '9': return D9;
+        case ' ': return SPACE;
+        default: return SPACE;
+    }
+}
+
+void sw_render_text5x7(uint16_t *dst, uint32_t w, uint32_t h,
+                       int32_t x0, int32_t y0,
+                       int32_t x, int32_t y, const char *s, uint16_t rgb565)
+{
+    if (!dst || !s) return;
+
+    int32_t cx = x - x0;
+    int32_t cy = y - y0;
+    while (*s)
+    {
+        const uint8_t *g = sw_glyph5x7(*s);
+        for (int32_t row = 0; row < 7; row++)
+        {
+            uint8_t bits = g[row];
+            int32_t yy = cy + row;
+            if ((uint32_t)yy >= h) continue;
+            uint16_t *p = &dst[(uint32_t)yy * w];
+            for (int32_t col = 0; col < 5; col++)
+            {
+                if (bits & (1u << (4 - col)))
+                {
+                    int32_t xx = cx + col;
+                    if ((uint32_t)xx < w) p[(uint32_t)xx] = rgb565;
+                }
+            }
+        }
+        cx += 6;
+        s++;
+    }
+}
+
 static inline uint32_t sw_isqrt_u32(uint32_t x)
 {
     /* Integer sqrt (floor). */

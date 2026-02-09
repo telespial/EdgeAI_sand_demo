@@ -149,6 +149,15 @@ static void dwt_cycle_counter_init(void)
 
 static int32_t abs_i32(int32_t v) { return (v < 0) ? -v : v; }
 
+static void edgeai_u32_to_dec3(char out[4], uint32_t v)
+{
+    if (v > 999u) v = 999u;
+    out[0] = (char)('0' + (v / 100u));
+    out[1] = (char)('0' + ((v / 10u) % 10u));
+    out[2] = (char)('0' + (v % 10u));
+    out[3] = '\0';
+}
+
 static int32_t clamp_i32_sym(int32_t v, int32_t limit_abs)
 {
     if (v > limit_abs) return limit_abs;
@@ -348,6 +357,7 @@ int main(void)
     uint32_t npu_accum_us = 0;
     uint32_t stats_accum_us = 0;
     uint32_t stats_frames = 0;
+    uint32_t fps_last = 0;
 
     /* Maximum dirty-rect size. Even in raster mode, clamp work per frame. */
     enum { TILE_MAX_W = 200, TILE_MAX_H = 200 };
@@ -556,6 +566,18 @@ int main(void)
             int32_t x1 = clamp_i32(maxx_r + pad, 0, LCD_W - 1);
             int32_t y1 = clamp_i32(maxy_r + pad, 0, LCD_H - 1);
 
+            /* Status overlay region (top-right). Force redraw of this small rect. */
+            const int32_t ov_w = 96;
+            const int32_t ov_h = 9;
+            const int32_t ov_x0 = LCD_W - ov_w - 2;
+            const int32_t ov_y0 = 2;
+            const int32_t ov_x1 = LCD_W - 2;
+            const int32_t ov_y1 = ov_y0 + ov_h - 1;
+            if (ov_x0 < x0) x0 = ov_x0;
+            if (ov_y0 < y0) y0 = ov_y0;
+            if (ov_x1 > x1) x1 = ov_x1;
+            if (ov_y1 > y1) y1 = ov_y1;
+
             /* Clamp tile size; if motion ever causes a large dirty rect, cap it to a fixed size. */
             int32_t w = x1 - x0 + 1;
             int32_t h = y1 - y0 + 1;
@@ -592,6 +614,17 @@ int main(void)
             sw_render_ball_shadow(tile, (uint32_t)w, (uint32_t)h, x0, y0, cx, cy, r_draw);
             sw_render_silver_ball(tile, (uint32_t)w, (uint32_t)h, x0, y0, cx, cy, r_draw, frame++, glint);
 
+            /* Tiny status text in upper-right (blue). */
+            char d3[4];
+            edgeai_u32_to_dec3(d3, fps_last);
+            char status[32];
+            /* Format: C:XYZ N:0 I:0 (digits fixed-width) */
+            status[0] = 'C'; status[1] = ':'; status[2] = d3[0]; status[3] = d3[1]; status[4] = d3[2];
+            status[5] = ' '; status[6] = 'N'; status[7] = ':'; status[8] = npu_ok ? '1' : '0';
+            status[9] = ' '; status[10] = 'I'; status[11] = ':'; status[12] = EDGEAI_ENABLE_NPU_INFERENCE ? '1' : '0';
+            status[13] = '\0';
+            sw_render_text5x7(tile, (uint32_t)w, (uint32_t)h, x0, y0, ov_x0, ov_y0, status, 0x001Fu);
+
             par_lcd_s035_blit_rect(x0, y0, x1, y1, tile);
 #else
             /* "Raster" mode: draw directly to LCD using multiple operations.
@@ -612,6 +645,17 @@ int main(void)
             /* Depth cue: scale the ball/shadow with y-position. */
             par_lcd_s035_draw_ball_shadow(cx, cy, r_draw);
             par_lcd_s035_draw_silver_ball(cx, cy, r_draw, frame++, glint);
+
+            /* Status text (blue) on a small black backing box. */
+            char d3[4];
+            edgeai_u32_to_dec3(d3, fps_last);
+            char status[32];
+            status[0] = 'C'; status[1] = ':'; status[2] = d3[0]; status[3] = d3[1]; status[4] = d3[2];
+            status[5] = ' '; status[6] = 'N'; status[7] = ':'; status[8] = npu_ok ? '1' : '0';
+            status[9] = ' '; status[10] = 'I'; status[11] = ':'; status[12] = EDGEAI_ENABLE_NPU_INFERENCE ? '1' : '0';
+            status[13] = '\0';
+            par_lcd_s035_fill_rect(ov_x0, ov_y0, ov_x1, ov_y1, 0x0000u);
+            edgeai_draw_text5x7_scaled(ov_x0, ov_y0, 1, status, 0x001Fu);
 #endif
 
             prev_x = cx;
@@ -682,6 +726,7 @@ int main(void)
         if (stats_accum_us >= 1000000u)
         {
             uint32_t fps = stats_frames;
+            fps_last = fps;
             stats_accum_us = 0;
             stats_frames = 0;
             PRINTF("EDGEAI: fps=%u raw=(%d,%d,%d) lp=(%d,%d) pos=(%d,%d) v=(%d,%d) glint=%u npu=%u\r\n",
