@@ -183,6 +183,14 @@ WS_DIR="$PWD/mcuxsdk_ws_test" ./tools/flash_frdmmcxn947.sh
 - Behavior: adds a third-dimension depth cue. The ball lifts up/down relative to its shadow based on vertical motion (accel magnitude high-pass). Ball size and shadow intensity vary with lift; UART debug includes `gmag`, `ghp`, and `lift`.
 - Notes: stable baseline for continuing NPU post-process and gesture work.
 
+### 2026-02-09 Golden (Current): Roll Speed Limit (Render-Stable)
+- Tag: `GOLDEN_2026-02-09_v25_roll_speed_limit`
+- Lock tag: `GOLDEN_LOCK_2026-02-09_v25_*` (includes SHA in name; do not move)
+- Commit: `git rev-parse GOLDEN_2026-02-09_v25_roll_speed_limit`
+- Hardware: FRDM-MCXN947 + PAR-LCD-S035 + Accel 4 Click (FXLS8974CF over mikroBUS/I2C)
+- Behavior: same as v24, with ~10% reduced max tilt acceleration to keep rendering stable at high roll speeds.
+- Notes: preferred restore point for starting NPU post-process work.
+
 ## Template (Copy/Paste)
 ### YYYY-MM-DD Short Name
 - Tag: `TAG_NAME`

@@ -5,8 +5,8 @@
 
 ## Golden Revision
 If anything regresses, return to:
-- Current golden tag: `GOLDEN_2026-02-09_v24_3d_lift_motion`
-- Commit: `git rev-parse GOLDEN_2026-02-09_v24_3d_lift_motion`
+- Current golden tag: `GOLDEN_2026-02-09_v25_roll_speed_limit`
+- Commit: `git rev-parse GOLDEN_2026-02-09_v25_roll_speed_limit`
 - Baseline golden (older): `milestone_raster_flicker_npu_v9` @ `5d569d4352fc723f6d6d567dcdd3c46f58025fd4`
 
 ## Last Run
