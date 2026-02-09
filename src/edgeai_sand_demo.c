@@ -237,6 +237,18 @@ int main(void)
     uint32_t stats_frames = 0;
     uint32_t fps_last = 0;
 
+    /* Per-second timing instrumentation (C4). */
+    uint32_t stats_loops = 0;
+    uint32_t stats_sim_steps = 0;
+    uint64_t t_input_cyc = 0;
+    uint64_t t_filter_cyc = 0;
+    uint64_t t_sim_cyc = 0;
+    uint64_t t_render_cyc = 0;
+    uint32_t t_input_max_cyc = 0;
+    uint32_t t_filter_max_cyc = 0;
+    uint32_t t_sim_max_cyc = 0;
+    uint32_t t_render_max_cyc = 0;
+
     /* Boot banner: keep it short and printf-lite compatible (avoid %ld). */
     PRINTF("EDGEAI: tilt-ball (npu_backend=%c npu_init=%u npu_run=%u render=%s)\r\n",
            edgeai_npu_backend_char(),
@@ -278,6 +290,9 @@ int main(void)
 
     for (;;)
     {
+        stats_loops++;
+        uint32_t t_input0 = DWT->CYCCNT;
+
         bool accel_ok = false;
         if (found)
         {
@@ -297,6 +312,11 @@ int main(void)
         {
             accel_fail = 0;
         }
+
+        uint32_t t_input1 = DWT->CYCCNT;
+        uint32_t input_dc = t_input1 - t_input0;
+        t_input_cyc += (uint64_t)input_dc;
+        if (input_dc > t_input_max_cyc) t_input_max_cyc = input_dc;
 
         uint32_t now = DWT->CYCCNT;
         uint32_t dc = now - last_cyc;
@@ -321,7 +341,12 @@ int main(void)
         sim_accum_q16 += dt_q16;
 
         accel_proc_out_t aout;
+        uint32_t t_filter0 = DWT->CYCCNT;
         accel_proc_update(&accel_proc, (int32_t)s.x, (int32_t)s.y, (int32_t)s.z, &aout);
+        uint32_t t_filter1 = DWT->CYCCNT;
+        uint32_t filter_dc = t_filter1 - t_filter0;
+        t_filter_cyc += (uint64_t)filter_dc;
+        if (filter_dc > t_filter_max_cyc) t_filter_max_cyc = filter_dc;
 
         if (aout.bang_pulse)
         {
@@ -336,6 +361,7 @@ int main(void)
         sin_base.bang_dvx_q16 = 0;
         sin_base.bang_dvy_q16 = 0;
 
+        uint32_t t_sim0 = DWT->CYCCNT;
         int iter = 0;
         while ((sim_accum_q16 >= sim_step_q16) && (iter < 6))
         {
@@ -350,7 +376,15 @@ int main(void)
                 bang_pending_dvx_q16 = 0;
                 bang_pending_dvy_q16 = 0;
             }
+            stats_sim_steps++;
             sim_step(&world, &sin, &sim_p);
+        }
+        uint32_t t_sim1 = DWT->CYCCNT;
+        if (iter > 0)
+        {
+            uint32_t sim_dc = t_sim1 - t_sim0;
+            t_sim_cyc += (uint64_t)sim_dc;
+            if (sim_dc > t_sim_max_cyc) t_sim_max_cyc = sim_dc;
         }
 
         bool do_render = (render_accum_us >= render_period_us);
@@ -362,9 +396,15 @@ int main(void)
         hud.npu_init_ok = npu_ok;
         hud.npu_run_enabled = (EDGEAI_ENABLE_NPU_INFERENCE ? true : false);
         hud.npu_backend = edgeai_npu_backend_char();
-        if (render_world_draw(&rs, &world, do_render, &hud))
+        if (do_render)
         {
-            stats_frames++;
+            uint32_t t_render0 = DWT->CYCCNT;
+            bool drew = render_world_draw(&rs, &world, true, &hud);
+            uint32_t t_render1 = DWT->CYCCNT;
+            uint32_t render_dc = t_render1 - t_render0;
+            t_render_cyc += (uint64_t)render_dc;
+            if (render_dc > t_render_max_cyc) t_render_max_cyc = render_dc;
+            if (drew) stats_frames++;
         }
 
         if (npu_accum_us >= 200000u)
@@ -398,6 +438,38 @@ int main(void)
                    (int)(world.ball.vx_q16 >> 16), (int)(world.ball.vy_q16 >> 16),
                    (unsigned)world.ball.glint,
                    (unsigned)(npu_ok ? 1u : 0u));
+
+            uint32_t cps_timing = SystemCoreClock ? SystemCoreClock : 150000000u;
+            uint64_t input_us_total = (t_input_cyc * 1000000ull) / (uint64_t)cps_timing;
+            uint64_t filter_us_total = (t_filter_cyc * 1000000ull) / (uint64_t)cps_timing;
+            uint64_t sim_us_total = (t_sim_cyc * 1000000ull) / (uint64_t)cps_timing;
+            uint64_t render_us_total = (t_render_cyc * 1000000ull) / (uint64_t)cps_timing;
+
+            uint32_t input_us_avg = stats_loops ? (uint32_t)(input_us_total / (uint64_t)stats_loops) : 0u;
+            uint32_t filter_us_avg = stats_loops ? (uint32_t)(filter_us_total / (uint64_t)stats_loops) : 0u;
+            uint32_t sim_us_avg = stats_sim_steps ? (uint32_t)(sim_us_total / (uint64_t)stats_sim_steps) : 0u;
+            uint32_t render_us_avg = fps ? (uint32_t)(render_us_total / (uint64_t)fps) : 0u;
+
+            uint32_t input_us_max = (uint32_t)(((uint64_t)t_input_max_cyc * 1000000ull) / (uint64_t)cps_timing);
+            uint32_t filter_us_max = (uint32_t)(((uint64_t)t_filter_max_cyc * 1000000ull) / (uint64_t)cps_timing);
+            uint32_t sim_us_max = (uint32_t)(((uint64_t)t_sim_max_cyc * 1000000ull) / (uint64_t)cps_timing);
+            uint32_t render_us_max = (uint32_t)(((uint64_t)t_render_max_cyc * 1000000ull) / (uint64_t)cps_timing);
+
+            PRINTF("EDGEAI: timing avg_us(in=%u filt=%u sim_step=%u render=%u) max_us(in=%u filt=%u sim=%u render=%u) loops=%u sim_steps=%u\r\n",
+                   (unsigned)input_us_avg, (unsigned)filter_us_avg, (unsigned)sim_us_avg, (unsigned)render_us_avg,
+                   (unsigned)input_us_max, (unsigned)filter_us_max, (unsigned)sim_us_max, (unsigned)render_us_max,
+                   (unsigned)stats_loops, (unsigned)stats_sim_steps);
+
+            stats_loops = 0;
+            stats_sim_steps = 0;
+            t_input_cyc = 0;
+            t_filter_cyc = 0;
+            t_sim_cyc = 0;
+            t_render_cyc = 0;
+            t_input_max_cyc = 0;
+            t_filter_max_cyc = 0;
+            t_sim_max_cyc = 0;
+            t_render_max_cyc = 0;
         }
     }
 }
