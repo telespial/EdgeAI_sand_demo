@@ -177,9 +177,10 @@ void sw_render_filled_circle(uint16_t *dst, uint32_t w, uint32_t h,
 
 void sw_render_ball_shadow(uint16_t *dst, uint32_t w, uint32_t h,
                            int32_t x0, int32_t y0,
-                           int32_t cx, int32_t cy, int32_t r)
+                           int32_t cx, int32_t cy, int32_t r, uint32_t alpha_max)
 {
     if (!dst || r <= 0) return;
+    if (alpha_max > 255u) alpha_max = 255u;
 
     /* Match the previous "AO spot" look, but render into the tile buffer. */
     int32_t sh_cx = cx + (r / 4);
@@ -211,7 +212,7 @@ void sw_render_ball_shadow(uint16_t *dst, uint32_t w, uint32_t h,
             if (d >= 256u) continue;
 
             uint32_t t = 256u - d;            /* 0..255 */
-            uint32_t a = (t * 60u) / 255u;    /* 0..60 */
+            uint32_t a = (t * alpha_max) / 255u;
             uint16_t c = sw_pack_rgb565_u8(a, a, a + (a / 3));
 
             /* Max-blend so shadow doesn't erase trails/ball. */

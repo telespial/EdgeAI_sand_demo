@@ -27,3 +27,22 @@ static inline void edgeai_u32_to_dec3(char out[4], uint32_t v)
     out[3] = '\0';
 }
 
+static inline uint32_t edgeai_isqrt_u32(uint32_t x)
+{
+    /* Integer sqrt (floor). */
+    uint32_t op = x;
+    uint32_t res = 0;
+    uint32_t one = 1uL << 30;
+    while (one > op) one >>= 2;
+    while (one != 0)
+    {
+        if (op >= res + one)
+        {
+            op -= res + one;
+            res = res + 2u * one;
+        }
+        res >>= 1;
+        one >>= 2;
+    }
+    return res;
+}

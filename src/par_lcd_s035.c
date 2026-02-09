@@ -287,9 +287,10 @@ static inline uint32_t isqrt_u32(uint32_t x)
     return res;
 }
 
-void par_lcd_s035_draw_ball_shadow(int32_t cx, int32_t cy, int32_t r)
+void par_lcd_s035_draw_ball_shadow(int32_t cx, int32_t cy, int32_t r, uint32_t alpha_max)
 {
     /* Not a physical shadow on black; it's a soft AO spot to add depth. */
+    if (alpha_max > 255u) alpha_max = 255u;
     int32_t sh_cx = cx + (r / 4);
     int32_t sh_cy = cy + r + (r / 2) + 8;
     int32_t rx = r + 18;
@@ -325,7 +326,7 @@ void par_lcd_s035_draw_ball_shadow(int32_t cx, int32_t cy, int32_t r)
 
             uint32_t t = 256u - d; /* 0..255 */
             /* AO spot is a faint bluish-gray so it's visible on black. */
-            uint32_t a = (t * 60u) / 255u; /* 0..60 */
+            uint32_t a = (t * alpha_max) / 255u;
             uint16_t c = pack_rgb565_u8(a, a, a + (a / 3));
             line[(uint32_t)(x - x0)] = c;
         }

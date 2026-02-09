@@ -86,9 +86,19 @@ bool render_world_draw(render_state_t *rs,
     int32_t cx = world->ball.x_q16 >> 16;
     int32_t cy_ground = world->ball.y_q16 >> 16;
     int32_t lift_px = world->ball.lift_q16 >> 16;
-    lift_px = edgeai_clamp_i32(lift_px, 0, EDGEAI_BALL_LIFT_MAX_PX);
+    lift_px = edgeai_clamp_i32_sym(lift_px, EDGEAI_BALL_LIFT_MAX_PX);
     int32_t cy_draw = cy_ground - lift_px;
-    int32_t r_draw = edgeai_ball_r_for_y(cy_ground);
+
+    int32_t r_ground = edgeai_ball_r_for_y(cy_ground);
+    int32_t r_draw = r_ground + (lift_px / 4);
+    r_draw = edgeai_clamp_i32(r_draw, EDGEAI_BALL_R_MIN, EDGEAI_BALL_R_MAX);
+
+    int32_t shadow_alpha = 60;
+    if (EDGEAI_BALL_LIFT_MAX_PX > 0)
+    {
+        shadow_alpha = 60 - (lift_px * 24) / EDGEAI_BALL_LIFT_MAX_PX;
+        shadow_alpha = edgeai_clamp_i32(shadow_alpha, 24, 96);
+    }
 
     int32_t removed_tx = rs->trail_x[rs->trail_head];
     int32_t removed_ty = rs->trail_y[rs->trail_head];
@@ -98,6 +108,8 @@ bool render_world_draw(render_state_t *rs,
     rs->trail_head = (rs->trail_head + 1u) % EDGEAI_TRAIL_N;
 
     int32_t minx_r = cx, miny_r = cy_ground, maxx_r = cx, maxy_r = cy_ground;
+    if (cy_draw < miny_r) miny_r = cy_draw;
+    if (cy_draw > maxy_r) maxy_r = cy_draw;
     for (int i = 0; i < EDGEAI_TRAIL_N; i++)
     {
         int32_t tx = rs->trail_x[i];
@@ -165,10 +177,10 @@ bool render_world_draw(render_state_t *rs,
         sw_render_filled_circle(s_tile, (uint32_t)w, (uint32_t)h, x0, y0, tx, ty, r0, c);
     }
 
-    sw_render_ball_shadow(s_tile, (uint32_t)w, (uint32_t)h, x0, y0, cx, cy_ground, r_draw);
+    sw_render_ball_shadow(s_tile, (uint32_t)w, (uint32_t)h, x0, y0, cx, cy_ground, r_ground, (uint32_t)shadow_alpha);
     uint32_t frame = rs->frame++;
     sw_render_silver_ball(s_tile, (uint32_t)w, (uint32_t)h, x0, y0, cx, cy_draw, r_draw, frame, world->ball.glint);
-	    render_world_draw_hud_tile(s_tile, (uint32_t)w, (uint32_t)h, x0, y0, hud);
+		    render_world_draw_hud_tile(s_tile, (uint32_t)w, (uint32_t)h, x0, y0, hud);
 
 	    par_lcd_s035_blit_rect(x0, y0, x1, y1, s_tile);
 
@@ -201,7 +213,7 @@ bool render_world_draw(render_state_t *rs,
                 sw_render_filled_circle(s_tile, (uint32_t)ew, (uint32_t)eh, ex0, ey0, tx, ty, r0, c);
             }
 
-            sw_render_ball_shadow(s_tile, (uint32_t)ew, (uint32_t)eh, ex0, ey0, cx, cy_ground, r_draw);
+            sw_render_ball_shadow(s_tile, (uint32_t)ew, (uint32_t)eh, ex0, ey0, cx, cy_ground, r_ground, (uint32_t)shadow_alpha);
             sw_render_silver_ball(s_tile, (uint32_t)ew, (uint32_t)eh, ex0, ey0, cx, cy_draw, r_draw, frame, world->ball.glint);
             render_world_draw_hud_tile(s_tile, (uint32_t)ew, (uint32_t)eh, ex0, ey0, hud);
 
@@ -222,8 +234,8 @@ bool render_world_draw(render_state_t *rs,
         par_lcd_s035_draw_filled_circle(tx, ty, r0, c);
     }
 
-    par_lcd_s035_draw_ball_shadow(cx, cy_ground, r_draw);
-    par_lcd_s035_draw_silver_ball(cx, cy_draw, r_draw, rs->frame++, world->ball.glint);
+	    par_lcd_s035_draw_ball_shadow(cx, cy_ground, r_ground, (uint32_t)shadow_alpha);
+	    par_lcd_s035_draw_silver_ball(cx, cy_draw, r_draw, rs->frame++, world->ball.glint);
 
     char d3[4];
     edgeai_u32_to_dec3(d3, hud->fps_last);
@@ -238,6 +250,6 @@ bool render_world_draw(render_state_t *rs,
 #endif
 
     rs->prev_x = cx;
-    rs->prev_y = cy_ground;
+    rs->prev_y = cy_draw;
     return true;
 }

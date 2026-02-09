@@ -287,6 +287,7 @@ int main(void)
     bool bang_pending = false;
     int32_t bang_pending_dvx_q16 = 0;
     int32_t bang_pending_dvy_q16 = 0;
+    int32_t g_mag_lp = EDGEAI_ACCEL_MAP_DENOM;
 
     for (;;)
     {
@@ -356,12 +357,39 @@ int main(void)
         }
 
         int32_t lift_target_q16 = 0;
+        int32_t g_mag = 0;
+        int32_t g_hp = 0;
         if (accel_fail == 0)
         {
-            int32_t az_abs = edgeai_abs_i32(aout.az_lp);
-            az_abs = edgeai_clamp_i32(az_abs, 0, EDGEAI_ACCEL_MAP_DENOM);
-            int32_t inv = EDGEAI_ACCEL_MAP_DENOM - az_abs;
-            int32_t lift_px = (inv * EDGEAI_BALL_LIFT_MAX_PX) / EDGEAI_ACCEL_MAP_DENOM;
+            /* Lift uses a high-pass signal from |a| (accel magnitude), so it reacts to
+             * up/down motion regardless of orientation.
+             */
+            int32_t ax = (int32_t)s.x;
+            int32_t ay = (int32_t)s.y;
+            int32_t az = (int32_t)s.z;
+            accel_proc_apply_axis_map(&ax, &ay);
+            const int32_t clip = EDGEAI_ACCEL_MAP_DENOM * 4;
+            ax = edgeai_clamp_i32(ax, -clip, clip);
+            ay = edgeai_clamp_i32(ay, -clip, clip);
+            az = edgeai_clamp_i32(az, -clip, clip);
+
+            uint64_t sumsq64 =
+                (uint64_t)((int64_t)ax * (int64_t)ax) +
+                (uint64_t)((int64_t)ay * (int64_t)ay) +
+                (uint64_t)((int64_t)az * (int64_t)az);
+            uint32_t sumsq = (sumsq64 > 0xFFFFFFFFull) ? 0xFFFFFFFFu : (uint32_t)sumsq64;
+            g_mag = (int32_t)edgeai_isqrt_u32(sumsq);
+            g_mag_lp += (g_mag - g_mag_lp) >> EDGEAI_BALL_LIFT_GMAG_LP_SHIFT;
+            g_hp = g_mag - g_mag_lp;
+            if (edgeai_abs_i32(g_hp) <= EDGEAI_BALL_LIFT_GMAG_DEADZONE) g_hp = 0;
+
+            int32_t lift_px = 0;
+            if (EDGEAI_BALL_LIFT_GMAG_RANGE > 0)
+            {
+                /* Upward acceleration reduces |a| (lighter); map that to positive lift. */
+                lift_px = (-g_hp * EDGEAI_BALL_LIFT_MAX_PX) / EDGEAI_BALL_LIFT_GMAG_RANGE;
+                lift_px = edgeai_clamp_i32_sym(lift_px, EDGEAI_BALL_LIFT_MAX_PX);
+            }
             lift_target_q16 = lift_px << 16;
         }
 
@@ -440,11 +468,13 @@ int main(void)
             int32_t cx = world.ball.x_q16 >> 16;
             int32_t cy = world.ball.y_q16 >> 16;
             int32_t lift_px = world.ball.lift_q16 >> 16;
-            PRINTF("EDGEAI: fps=%u raw=(%d,%d,%d) lp=(%d,%d,%d) hp=(%d,%d,%d) bang=%d pos=(%d,%d) lift=%d v=(%d,%d) glint=%u npu=%u\r\n",
+            PRINTF("EDGEAI: fps=%u raw=(%d,%d,%d) lp=(%d,%d,%d) hp=(%d,%d,%d) gmag=%d ghp=%d bang=%d pos=(%d,%d) lift=%d v=(%d,%d) glint=%u npu=%u\r\n",
                    (unsigned)fps,
                    (int)s.x, (int)s.y, (int)s.z,
                    (int)aout.ax_lp, (int)aout.ay_lp, (int)aout.az_lp,
                    (int)aout.ax_hp, (int)aout.ay_hp, (int)aout.az_hp,
+                   (int)g_mag,
+                   (int)g_hp,
                    (int)aout.bang_score,
                    (int)cx, (int)cy,
                    (int)lift_px,

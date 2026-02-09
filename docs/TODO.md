@@ -15,6 +15,7 @@ Execution order:
 Goal:
 - Add a third axis of control so board raise/lower maps to an on-screen "lift" dimension for the ball.
 - Lift is primarily a visual depth cue (ball moves relative to its shadow); 2D motion remains tilt-driven.
+  - Note: the accelerometer does not measure absolute height; this control reacts to up/down acceleration.
 
 Implementation sketch:
 - Add `lift_q16` to `ball_state_t` and update it from a processed Z-axis signal (`az_lp` or derived).
@@ -25,7 +26,7 @@ Implementation sketch:
   - lift value is visible in UART debug output
 
 Acceptance criteria:
-- On hardware, varying the board's Z orientation causes visible lift changes (ball separates from its shadow).
+- On hardware, raising/lowering the board (up/down motion) causes visible lift changes (ball separates from its shadow).
 - No stuck pixels or tearing regressions.
 - Build + flash remain repeatable; text style lint passes.
 
@@ -79,4 +80,3 @@ Implementation sketch:
 Acceptance criteria:
 - Model-assisted path matches baseline behavior within an acceptable error band.
 - Fallback path remains available and easy to enable.
-

@@ -51,7 +51,8 @@ static inline int32_t edgeai_ball_r_for_y(int32_t cy)
 #endif
 
 /* Ball lift (third dimension control).
- * Lift is a visual depth cue (ball moves relative to its shadow) derived from Z orientation.
+ * Lift is a visual depth cue (ball moves relative to its shadow) derived from vertical motion.
+ * Note: an accelerometer cannot measure absolute height; this reacts to up/down acceleration.
  * Keep `EDGEAI_BALL_LIFT_MAX_PX` within the renderer padding budget.
  */
 #ifndef EDGEAI_BALL_LIFT_MAX_PX
@@ -59,6 +60,16 @@ static inline int32_t edgeai_ball_r_for_y(int32_t cy)
 #endif
 #ifndef EDGEAI_BALL_LIFT_SMOOTH_SHIFT
 #define EDGEAI_BALL_LIFT_SMOOTH_SHIFT 3
+#endif
+/* Baseline and mapping for accel magnitude (counts). */
+#ifndef EDGEAI_BALL_LIFT_GMAG_LP_SHIFT
+#define EDGEAI_BALL_LIFT_GMAG_LP_SHIFT 6
+#endif
+#ifndef EDGEAI_BALL_LIFT_GMAG_RANGE
+#define EDGEAI_BALL_LIFT_GMAG_RANGE 80
+#endif
+#ifndef EDGEAI_BALL_LIFT_GMAG_DEADZONE
+#define EDGEAI_BALL_LIFT_GMAG_DEADZONE 6
 #endif
 
 /* Render tile limits (single-blit path). */

@@ -24,4 +24,4 @@ void par_lcd_s035_fill_rect(int32_t x0, int32_t y0, int32_t x1, int32_t y1, uint
 void par_lcd_s035_draw_silver_ball(int32_t cx, int32_t cy, int32_t r, uint32_t frame, uint8_t glint);
 
 /* Draw a soft ambient-occlusion style shadow below the ball (visible even on black). */
-void par_lcd_s035_draw_ball_shadow(int32_t cx, int32_t cy, int32_t r);
+void par_lcd_s035_draw_ball_shadow(int32_t cx, int32_t cy, int32_t r, uint32_t alpha_max);
