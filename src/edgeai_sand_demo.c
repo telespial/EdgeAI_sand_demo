@@ -421,6 +421,7 @@ int main(void)
     uint32_t rng = (uint32_t)DWT->CYCCNT ^ 0xA341316Cu;
     int32_t target_x = prev_x;
     int32_t target_y = prev_y;
+    bool have_target = false;
 
     const int32_t bound_minx = BALL_R_MAX + 2;
     const int32_t bound_miny = BALL_R_MAX + 2;
@@ -538,8 +539,17 @@ int main(void)
 
         if (mode == EDGEAI_MODE_AUTOPAINT)
         {
-            /* Choose a random unvisited cell to steer toward. */
-            if (visited_n < GRID_N)
+            int32_t cx_now = x_q16 >> 16;
+            int32_t cy_now = y_q16 >> 16;
+            int32_t ex = target_x - cx_now;
+            int32_t ey = target_y - cy_now;
+            int32_t vx_px_s = vx_q16 >> 16;
+            int32_t vy_px_s = vy_q16 >> 16;
+
+            /* Select a new target only when we don't have one yet, or we reached it. */
+            if (!have_target ||
+                ((abs_i32(ex) <= 14) && (abs_i32(ey) <= 14) &&
+                 (abs_i32(vx_px_s) <= 12) && (abs_i32(vy_px_s) <= 12)))
             {
                 int idx = -1;
                 for (int t = 0; t < 64; t++)
@@ -559,17 +569,13 @@ int main(void)
                     int32_t ty = row * CELL_H + (CELL_H / 2);
                     target_x = clamp_i32(tx, bound_minx, bound_maxx);
                     target_y = clamp_i32(ty, bound_miny, bound_maxy);
+                    have_target = true;
+                    ex = target_x - cx_now;
+                    ey = target_y - cy_now;
                 }
             }
 
             /* Autopilot: PD controller to drive toward the current target. */
-            int32_t cx_now = x_q16 >> 16;
-            int32_t cy_now = y_q16 >> 16;
-            int32_t ex = target_x - cx_now;
-            int32_t ey = target_y - cy_now;
-            int32_t vx_px_s = vx_q16 >> 16;
-            int32_t vy_px_s = vy_q16 >> 16;
-
             const int32_t a_px_s2 = 4200;
             int32_t ux = ex * 28 - vx_px_s * 85;
             int32_t uy = ey * 28 - vy_px_s * 85;
