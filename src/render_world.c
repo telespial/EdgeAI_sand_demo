@@ -154,8 +154,12 @@ bool render_world_draw(render_state_t *rs,
         did_clamp = true;
         int32_t halfw = EDGEAI_TILE_MAX_W / 2;
         int32_t halfh = EDGEAI_TILE_MAX_H / 2;
-        int32_t ccx = (minx_r + maxx_r) / 2;
-        int32_t ccy = (miny_r + maxy_r) / 2;
+        /* When the dirty-rect grows beyond the max tile size, prioritize keeping the
+         * ball visible. Centering on the overall min/max can exclude the current ball
+         * position (and make it "disappear") when trail/HUD span a large region.
+         */
+        int32_t ccx = cx;
+        int32_t ccy = cy_draw;
         x0 = edgeai_clamp_i32(ccx - halfw, 0, EDGEAI_LCD_W - 1);
         y0 = edgeai_clamp_i32(ccy - halfh, 0, EDGEAI_LCD_H - 1);
         x1 = edgeai_clamp_i32(x0 + EDGEAI_TILE_MAX_W - 1, 0, EDGEAI_LCD_W - 1);
@@ -191,11 +195,11 @@ bool render_world_draw(render_state_t *rs,
 	     * final blit region and remain "stuck" on the LCD. Issue a tiny cleanup blit around
 	     * the removed point to clear stale pixels.
 	     */
-	    if (did_clamp)
-	    {
-	        const int32_t erase_pad = 6; /* dot radius <= 2; keep a small safety margin */
-	        if ((removed_tx - erase_pad) < x0 || (removed_tx + erase_pad) > x1 ||
-	            (removed_ty - erase_pad) < y0 || (removed_ty + erase_pad) > y1)
+		    if (did_clamp)
+		    {
+		        const int32_t erase_pad = 6; /* dot radius <= 2; keep a small safety margin */
+		        if ((removed_tx - erase_pad) < x0 || (removed_tx + erase_pad) > x1 ||
+		            (removed_ty - erase_pad) < y0 || (removed_ty + erase_pad) > y1)
 	        {
 	            int32_t ex0 = edgeai_clamp_i32(removed_tx - erase_pad, 0, EDGEAI_LCD_W - 1);
 	            int32_t ey0 = edgeai_clamp_i32(removed_ty - erase_pad, 0, EDGEAI_LCD_H - 1);
@@ -223,9 +227,31 @@ bool render_world_draw(render_state_t *rs,
 #endif
             render_world_draw_hud_tile(s_tile, (uint32_t)ew, (uint32_t)eh, ex0, ey0, hud);
 
-	            par_lcd_s035_blit_rect(ex0, ey0, ex1, ey1, s_tile);
-	        }
-	    }
+		            par_lcd_s035_blit_rect(ex0, ey0, ex1, ey1, s_tile);
+		        }
+		    }
+
+            /* If the HUD was outside the (clamped) main blit region, update it with a
+             * small dedicated blit so the status text stays live.
+             */
+            if (did_clamp)
+            {
+                if (ov_x0 < x0 || ov_y0 < y0 || ov_x1 > x1 || ov_y1 > y1)
+                {
+                    int32_t hx0 = ov_x0;
+                    int32_t hy0 = ov_y0;
+                    int32_t hx1 = ov_x1;
+                    int32_t hy1 = ov_y1;
+                    int32_t hw = hx1 - hx0 + 1;
+                    int32_t hh = hy1 - hy0 + 1;
+                    if (hw > 0 && hh > 0 && hw <= EDGEAI_TILE_MAX_W && hh <= EDGEAI_TILE_MAX_H)
+                    {
+                        sw_render_dune_bg(s_tile, (uint32_t)hw, (uint32_t)hh, hx0, hy0);
+                        render_world_draw_hud_tile(s_tile, (uint32_t)hw, (uint32_t)hh, hx0, hy0, hud);
+                        par_lcd_s035_blit_rect(hx0, hy0, hx1, hy1, s_tile);
+                    }
+                }
+            }
 #else
     uint16_t bg = hud->accel_fail ? 0x1800u : 0x0000u;
     par_lcd_s035_fill_rect(x0, y0, x1, y1, bg);
