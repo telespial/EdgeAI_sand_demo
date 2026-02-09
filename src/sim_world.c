@@ -10,12 +10,15 @@ void sim_world_init(sim_world_t *w, int32_t lcd_w, int32_t lcd_h)
     w->ball.y_q16 = (lcd_h / 2) << 16;
     w->ball.vx_q16 = 0;
     w->ball.vy_q16 = 0;
+    w->ball.lift_q16 = 0;
     w->ball.glint = 0;
 }
 
 void sim_step(sim_world_t *w, const sim_input_t *in, const sim_params_t *p)
 {
     if (!w || !in || !p) return;
+
+    w->ball.lift_q16 += (in->lift_target_q16 - w->ball.lift_q16) >> EDGEAI_BALL_LIFT_SMOOTH_SHIFT;
 
     /* One-shot velocity impulse from an impact/bang (provided by the main loop). */
     w->ball.vx_q16 += in->bang_dvx_q16;

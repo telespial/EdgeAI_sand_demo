@@ -50,6 +50,17 @@ static inline int32_t edgeai_ball_r_for_y(int32_t cy)
 #define EDGEAI_BANG_GAIN_Q16 (250 << 16)
 #endif
 
+/* Ball lift (third dimension control).
+ * Lift is a visual depth cue (ball moves relative to its shadow) derived from Z orientation.
+ * Keep `EDGEAI_BALL_LIFT_MAX_PX` within the renderer padding budget.
+ */
+#ifndef EDGEAI_BALL_LIFT_MAX_PX
+#define EDGEAI_BALL_LIFT_MAX_PX 28
+#endif
+#ifndef EDGEAI_BALL_LIFT_SMOOTH_SHIFT
+#define EDGEAI_BALL_LIFT_SMOOTH_SHIFT 3
+#endif
+
 /* Render tile limits (single-blit path). */
 #define EDGEAI_TILE_MAX_W 200
 #define EDGEAI_TILE_MAX_H 200
