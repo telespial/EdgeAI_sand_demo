@@ -274,7 +274,7 @@ int main(void)
 
     sim_params_t sim_p;
     sim_p.sim_step_q16 = sim_step_q16;
-    sim_p.a_px_s2 = 4200;
+    sim_p.a_px_s2 = 3780;
     sim_p.damp_q16 = 65000;
     sim_p.minx = EDGEAI_BALL_R_MAX + 2;
     sim_p.miny = EDGEAI_BALL_R_MAX + 2;
