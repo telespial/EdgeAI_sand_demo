@@ -112,6 +112,14 @@ WS_DIR="$PWD/mcuxsdk_ws_test" ./tools/flash_frdmmcxn947.sh
 - Commit: `git rev-parse GOLDEN_2026-02-09_v11_autopaint_then_accel`
 - Hardware: FRDM-MCXN947 + PAR-LCD-S035 + Accel 4 Click (FXLS8974CF over mikroBUS/I2C)
 - Behavior: boots black, shows “SAND DUNE” for ~3s, then autopaints the dune background until fully rendered (no black remains), then starts taking input from the accelerometer for normal operation.
+- Notes: superseded by v12 (v11 kept as a rollback anchor).
+
+### 2026-02-09 Golden v12 (Autopaint Target-Stability Fix)
+- Tag: `GOLDEN_2026-02-09_v12_autopaint_then_accel`
+- Lock tag: `GOLDEN_LOCK_2026-02-09_v12_*` (includes SHA in name; do not move)
+- Commit: `git rev-parse GOLDEN_2026-02-09_v12_autopaint_then_accel`
+- Hardware: FRDM-MCXN947 + PAR-LCD-S035 + Accel 4 Click (FXLS8974CF over mikroBUS/I2C)
+- Behavior: same as v11, but fixes autopaint target selection so the ball keeps a target until it is reached (instead of re-randomizing every iteration), making coverage deterministic and faster.
 - Notes: this is the current golden restore point.
 
 ## Template (Copy/Paste)

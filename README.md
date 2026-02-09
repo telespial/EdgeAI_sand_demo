@@ -15,12 +15,12 @@ Current rendering notes:
 
 ## Known-Good Revision (Golden)
 If anything breaks, return to this exact revision:
-- Tag: `GOLDEN_2026-02-09_v11_autopaint_then_accel`
-- Commit: `git rev-parse GOLDEN_2026-02-09_v11_autopaint_then_accel`
+- Tag: `GOLDEN_2026-02-09_v12_autopaint_then_accel`
+- Commit: `git rev-parse GOLDEN_2026-02-09_v12_autopaint_then_accel`
 
 Checkout + rebuild + flash:
 ```bash
-git checkout GOLDEN_2026-02-09_v11_autopaint_then_accel
+git checkout GOLDEN_2026-02-09_v12_autopaint_then_accel
 MCUX_EXAMPLES_DIR="$PWD/mcuxsdk_ws_test/mcuxsdk/examples" ./sdk_example/install_mcux_overlay.sh
 ninja -C mcuxsdk_ws_test/build
 WS_DIR="$PWD/mcuxsdk_ws_test" ./tools/flash_frdmmcxn947.sh

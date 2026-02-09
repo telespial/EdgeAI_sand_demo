@@ -5,8 +5,8 @@
 
 ## Golden Revision
 If anything regresses, return to:
-- Tag: `GOLDEN_2026-02-09_v11_autopaint_then_accel`
-- Commit: `git rev-parse GOLDEN_2026-02-09_v11_autopaint_then_accel`
+- Tag: `GOLDEN_2026-02-09_v12_autopaint_then_accel`
+- Commit: `git rev-parse GOLDEN_2026-02-09_v12_autopaint_then_accel`
 
 ## Last Run
 - Date: 2026-02-08
