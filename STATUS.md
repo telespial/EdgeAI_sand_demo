@@ -5,8 +5,8 @@
 
 ## Golden Revision
 If anything regresses, return to:
-- Current golden tag: `GOLDEN_2026-02-09_v21_hud_backend_glyphs`
-- Commit: `git rev-parse GOLDEN_2026-02-09_v21_hud_backend_glyphs`
+- Current golden tag: `GOLDEN_2026-02-09_v22_ball_polish_base`
+- Commit: `git rev-parse GOLDEN_2026-02-09_v22_ball_polish_base`
 - Baseline golden (older): `milestone_raster_flicker_npu_v9` @ `5d569d4352fc723f6d6d567dcdd3c46f58025fd4`
 
 ## Last Run

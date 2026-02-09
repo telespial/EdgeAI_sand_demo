@@ -159,6 +159,14 @@ WS_DIR="$PWD/mcuxsdk_ws_test" ./tools/flash_frdmmcxn947.sh
 - Behavior: preserves the dune background + tilt ball demo and adds a stable HUD renderer path (upper-right text) with expanded 5x7 glyph coverage.
 - Notes: baseline restore point for continued work; do not move this tag or its lock.
 
+### 2026-02-09 Golden (Current): Ball Polish Base (Docs + Tooling Synced)
+- Tag: `GOLDEN_2026-02-09_v22_ball_polish_base`
+- Lock tag: `GOLDEN_LOCK_2026-02-09_v22_*` (includes SHA in name; do not move)
+- Commit: `git rev-parse GOLDEN_2026-02-09_v22_ball_polish_base`
+- Hardware: FRDM-MCXN947 + PAR-LCD-S035 + Accel 4 Click (FXLS8974CF over mikroBUS/I2C)
+- Behavior: same firmware behavior as v21; docs updated with a ToDo plan and tooling updated to support explicit build/flash directories.
+- Notes: baseline for implementing A1-A4 ball polish tasks; do not move this tag or its lock.
+
 ## Template (Copy/Paste)
 ### YYYY-MM-DD Short Name
 - Tag: `TAG_NAME`
