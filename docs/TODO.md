@@ -35,7 +35,7 @@ Implementation sketch:
   - lift value is visible in UART debug output
 
 Acceptance criteria:
-- On hardware, raising/lowering the board (up/down motion) grows/shrinks the ball (target range: ~0.33x..3.0x).
+- On hardware, raising/lowering the board (up/down motion) grows/shrinks the ball (target range: ~1.67x..3.0x).
 - Scale remains latched when motion stops abruptly and changes only on distinct up/down motion.
 - No stuck pixels or tearing regressions.
 - Build + flash remain repeatable; text style lint passes.

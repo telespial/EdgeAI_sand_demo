@@ -10,7 +10,7 @@ void sim_world_init(sim_world_t *w, int32_t lcd_w, int32_t lcd_h)
     w->ball.y_q16 = (lcd_h / 2) << 16;
     w->ball.vx_q16 = 0;
     w->ball.vy_q16 = 0;
-    w->ball.z_scale_q16 = (1 << 16);
+    w->ball.z_scale_q16 = EDGEAI_BALL_Z_SCALE_MIN_Q16;
     w->ball.glint = 0;
 }
 

@@ -288,7 +288,7 @@ int main(void)
     int32_t bang_pending_dvx_q16 = 0;
     int32_t bang_pending_dvy_q16 = 0;
     int32_t g_mag_lp = EDGEAI_ACCEL_MAP_DENOM;
-    int32_t z_scale_cmd_q16 = (1 << 16);
+    int32_t z_scale_cmd_q16 = EDGEAI_BALL_Z_SCALE_MIN_Q16;
     int32_t z_last_dir = 0; /* +1=up (grow), -1=down (shrink) */
     uint32_t z_lockout_us = 0;
 

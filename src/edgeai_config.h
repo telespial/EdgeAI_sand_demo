@@ -24,7 +24,7 @@
  * - 3.0 == (3<<16)
  */
 #ifndef EDGEAI_BALL_Z_SCALE_MIN_Q16
-#define EDGEAI_BALL_Z_SCALE_MIN_Q16 ((1 << 16) / 3) /* ~0.333x */
+#define EDGEAI_BALL_Z_SCALE_MIN_Q16 ((5 << 16) / 3) /* ~1.667x (5x larger than the old 0.333x minimum) */
 #endif
 #ifndef EDGEAI_BALL_Z_SCALE_MAX_Q16
 #define EDGEAI_BALL_Z_SCALE_MAX_Q16 (3 << 16) /* 3.0x */
