@@ -57,6 +57,14 @@ Then flash:
 ./tools/flash_frdmmcxn947.sh
 ```
 
+## Failsafe Flash (Last Resort)
+The active failsafe artifact is recorded in `docs/failsafe.md`.
+
+Flashing requires explicit confirmation via the exact filename listed in line 1 of `docs/failsafe.md`:
+```bash
+FAILSAFE_CONFIRM="$(sed -n '1p' docs/failsafe.md)" ./tools/flash_failsafe.sh
+```
+
 ## Serial (Optional)
 The MCU-Link VCOM interface typically enumerates as `/dev/ttyACM0`:
 ```bash

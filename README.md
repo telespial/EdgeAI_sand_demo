@@ -15,13 +15,19 @@ Current rendering notes:
 
 ## Known-Good Revision (Golden)
 If anything breaks, return to this exact revision:
-- Current golden tag: `GOLDEN_2026-02-09_v25_roll_speed_limit`
-- Commit: `git rev-parse GOLDEN_2026-02-09_v25_roll_speed_limit`
+- Current golden tag: `GOLDEN_2026-02-10_v27_npu_glint`
+- Commit: `git rev-parse GOLDEN_2026-02-10_v27_npu_glint`
 - Baseline golden (older): `milestone_raster_flicker_npu_v9` @ `5d569d4352fc723f6d6d567dcdd3c46f58025fd4`
+
+Golden tag policy:
+- Golden restore points are updated only on an explicit project-owner directive. See `docs/RESTORE_POINTS.md`.
+
+Failsafe firmware policy:
+- A file-based failsafe firmware artifact exists for last-resort board recovery. See `docs/failsafe.md`.
 
 Checkout + rebuild + flash:
 ```bash
-git checkout GOLDEN_2026-02-09_v25_roll_speed_limit
+git checkout GOLDEN_2026-02-10_v27_npu_glint
 MCUX_EXAMPLES_DIR="$PWD/mcuxsdk_ws_test/mcuxsdk/examples" ./sdk_example/install_mcux_overlay.sh
 ninja -C mcuxsdk_ws_test/build
 WS_DIR="$PWD/mcuxsdk_ws_test" ./tools/flash_frdmmcxn947.sh

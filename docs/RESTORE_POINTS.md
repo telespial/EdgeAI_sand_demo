@@ -7,6 +7,13 @@ Source of truth:
 - Do not delete old entries. Prefer adding a new tag + a new entry.
 - Golden tags are **immutable**: never move an existing `GOLDEN_*` tag. If a new “current golden” is required, create a *new* `GOLDEN_*` tag instead.
 - For every golden tag, also create a `GOLDEN_LOCK_*_<SHA>` tag that bakes the target commit SHA into the tag name. Never move lock tags.
+- Creating a new golden restore point (new `GOLDEN_*` tag + new entry) requires an explicit project-owner directive in the current session.
+- Do not create, move, rename, or "promote" golden tags based on inference, context, or automation defaults.
+- Updating "current golden" references elsewhere in the repo (for example, `README.md` and `STATUS.md`) is part of a golden promotion and follows the same authorization rule.
+- Maintain an additional file-based failsafe firmware artifact for last-resort board recovery.
+  - Pointer file: `docs/failsafe.md` (single artifact filename + a brief state summary).
+  - Flash tool: `tools/flash_failsafe.sh` (requires explicit filename confirmation).
+  - Updating the failsafe pointer or artifact requires an explicit project-owner directive in the current session.
 - Text in docs/comments/scripts must avoid conversational phrasing and direct reader references. See `docs/STYLE_RULES.md`.
 
 ## How To Restore
@@ -198,6 +205,15 @@ WS_DIR="$PWD/mcuxsdk_ws_test" ./tools/flash_frdmmcxn947.sh
 - Hardware: FRDM-MCXN947 + PAR-LCD-S035 + Accel 4 Click (FXLS8974CF over mikroBUS/I2C)
 - Behavior: replaces the static 45-degree streak highlight with a rolling environment reflection (sky/ground + sun spot) and moving sparkles driven by an approximate spin phase accumulator. NPU path remains optional and gated.
 - Notes: NPU-enabled builds require a larger stack (`__stack_size__=0x2000`) to avoid STKOF HardFault during TFLM/Neutron init/invoke.
+
+### 2026-02-10 Golden (Current): NPU Glint (Inference Enabled, Neutron)
+- Tag: `GOLDEN_2026-02-10_v27_npu_glint`
+- Lock tag: `GOLDEN_LOCK_2026-02-10_v27_*` (includes SHA in name; do not move)
+- Commit: `git rev-parse GOLDEN_2026-02-10_v27_npu_glint`
+- Hardware: FRDM-MCXN947 + PAR-LCD-S035 + Accel 4 Click (FXLS8974CF over mikroBUS/I2C)
+- Behavior: tilt-controlled silver ball demo with dune background, HUD status, and NPU inference enabled to drive glint modulation.
+- Build: `-DEDGEAI_ENABLE_NPU_INFERENCE=1 -DEDGEAI_NPU_BACKEND=1`
+- Example build (debug): `west build -d build_v27_npu_glint mcuxsdk/examples/demo_apps/edgeai_sand_demo --toolchain armgcc --config debug -b frdmmcxn947 -Dcore_id=cm33_core0 -DEDGEAI_ENABLE_NPU_INFERENCE=1 -DEDGEAI_NPU_BACKEND=1`
 
 ## Template (Copy/Paste)
 ### YYYY-MM-DD Short Name
