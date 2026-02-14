@@ -15,8 +15,8 @@ Current rendering notes:
 
 ## Known-Good Revision (Golden)
 If anything breaks, return to this exact revision:
-- Current golden tag: `GOLDEN_2026-02-10_v27_npu_glint`
-- Commit: `git rev-parse GOLDEN_2026-02-10_v27_npu_glint`
+- Current golden tag: `GOLDEN_2026-02-14_v31_hud_top_left_boot_visible`
+- Commit: `git rev-parse GOLDEN_2026-02-14_v31_hud_top_left_boot_visible`
 - Baseline golden (older): `milestone_raster_flicker_npu_v9` @ `5d569d4352fc723f6d6d567dcdd3c46f58025fd4`
 
 Golden tag policy:
@@ -27,7 +27,7 @@ Failsafe firmware policy:
 
 Checkout + rebuild + flash:
 ```bash
-git checkout GOLDEN_2026-02-10_v27_npu_glint
+git checkout GOLDEN_2026-02-14_v31_hud_top_left_boot_visible
 MCUX_EXAMPLES_DIR="$PWD/mcuxsdk_ws_test/mcuxsdk/examples" ./sdk_example/install_mcux_overlay.sh
 ninja -C mcuxsdk_ws_test/build
 WS_DIR="$PWD/mcuxsdk_ws_test" ./tools/flash_frdmmcxn947.sh
@@ -55,7 +55,7 @@ Key folders:
 ## Run Validation Checklist
 - LCD: boot shows a centered `SAND DUNE` title for ~3 seconds, then transitions to the dune background + ball.
 - Motion: ball responds to tilt; trails follow the ball.
-- HUD: top-right text shows `C:###` (FPS) and NPU status.
+- HUD: top-left text shows `C:###` (FPS) and NPU status immediately after title/background transition.
   - `B:S` stub backend, `B:N` neutron backend
   - `N:1` backend init ok
   - `I:1` NPU step enabled (`EDGEAI_ENABLE_NPU_INFERENCE=1`)

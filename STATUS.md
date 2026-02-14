@@ -5,8 +5,8 @@
 
 ## Golden Revision
 If anything regresses, return to:
-- Current golden tag: `GOLDEN_2026-02-10_v27_npu_glint`
-- Commit: `git rev-parse GOLDEN_2026-02-10_v27_npu_glint`
+- Current golden tag: `GOLDEN_2026-02-14_v31_hud_top_left_boot_visible`
+- Commit: `git rev-parse GOLDEN_2026-02-14_v31_hud_top_left_boot_visible`
 - Baseline golden (older): `milestone_raster_flicker_npu_v9` @ `5d569d4352fc723f6d6d567dcdd3c46f58025fd4`
 
 Golden tag policy:
@@ -16,9 +16,9 @@ Failsafe firmware policy:
 - A file-based failsafe firmware artifact exists for last-resort board recovery. See `docs/failsafe.md`.
 
 ## Last Run
-- Date: 2026-02-10
-- Result: build + flash ok; LCD shows dune background + shaded "silver ball" with trails; NPU inference enabled and stable
-- Binary: `mcuxsdk_ws/build_v26_npu_glint/edgeai_sand_demo_cm33_core0.elf`
+- Date: 2026-02-14
+- Result: build + flash ok; LCD shows dune background + shaded "silver ball" with trails; HUD moved to top-left and rendered at startup without requiring ball overlap
+- Binary: `mcuxsdk_ws/build_v27_exact_flags/edgeai_sand_demo_cm33_core0.elf`
 - Notes:
   - NPU stack integrated (TFLM + Neutron backend). NPU stepping is compile-time gated (see `EDGEAI_ENABLE_NPU_INFERENCE` in `src/npu_api.h`).
   - Accel debug prints available on VCOM (`/dev/ttyACM0`)
