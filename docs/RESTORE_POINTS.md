@@ -215,6 +215,15 @@ WS_DIR="$PWD/mcuxsdk_ws_test" ./tools/flash_frdmmcxn947.sh
 - Build: `-DEDGEAI_ENABLE_NPU_INFERENCE=1 -DEDGEAI_NPU_BACKEND=1`
 - Example build (debug): `west build -d build_v27_npu_glint mcuxsdk/examples/demo_apps/edgeai_sand_demo --toolchain armgcc --config debug -b frdmmcxn947 -Dcore_id=cm33_core0 -DEDGEAI_ENABLE_NPU_INFERENCE=1 -DEDGEAI_NPU_BACKEND=1`
 
+### 2026-02-14 Golden (Current): GitHub Pull Baseline + Failsafe Sync
+- Tag: `GOLDEN_2026-02-14_v28_github_pull_baseline`
+- Lock tag: `GOLDEN_LOCK_2026-02-14_v28_*` (includes SHA in name; do not move)
+- Commit: `git rev-parse GOLDEN_2026-02-14_v28_github_pull_baseline`
+- Hardware: FRDM-MCXN947 + PAR-LCD-S035 + Accel 4 Click (FXLS8974CF over mikroBUS/I2C)
+- Behavior: same runtime behavior as v27 NPU glint golden; promoted so GitHub default pull target, golden tag, and failsafe pointer all align.
+- Failsafe pointer: `docs/failsafe.md` -> `failsafe/FAILSAFE_2026-02-14_v28_from_v27_7bab699.elf`
+- Build: `-DEDGEAI_ENABLE_NPU_INFERENCE=1 -DEDGEAI_NPU_BACKEND=1`
+
 ## Template (Copy/Paste)
 ### YYYY-MM-DD Short Name
 - Tag: `TAG_NAME`
