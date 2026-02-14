@@ -216,18 +216,6 @@ bool render_world_draw(render_state_t *rs,
     int32_t x1 = edgeai_clamp_i32(maxx_r + pad, 0, EDGEAI_LCD_W - 1);
     int32_t y1 = edgeai_clamp_i32(maxy_r + pad, 0, EDGEAI_LCD_H - 1);
 
-    /* HUD region (top-left). */
-    const int32_t ov_w = EDGEAI_HUD_W;
-    const int32_t ov_h = EDGEAI_HUD_H;
-    const int32_t ov_x0 = EDGEAI_HUD_X0;
-    const int32_t ov_y0 = EDGEAI_HUD_Y0;
-    const int32_t ov_x1 = ov_x0 + ov_w - 1;
-    const int32_t ov_y1 = ov_y0 + ov_h - 1;
-    if (ov_x0 < x0) x0 = ov_x0;
-    if (ov_y0 < y0) y0 = ov_y0;
-    if (ov_x1 > x1) x1 = ov_x1;
-    if (ov_y1 > y1) y1 = ov_y1;
-
     int32_t w = x1 - x0 + 1;
     int32_t h = y1 - y0 + 1;
     bool did_clamp = false;
@@ -307,6 +295,11 @@ bool render_world_draw(render_state_t *rs,
     /* Draw HUD every frame in a dedicated blit so it never depends on ball dirty-rects. */
     render_world_blit_hud(hud);
 #else
+    const int32_t ov_x0 = EDGEAI_HUD_X0;
+    const int32_t ov_y0 = EDGEAI_HUD_Y0;
+    const int32_t ov_x1 = ov_x0 + EDGEAI_HUD_W - 1;
+    const int32_t ov_y1 = ov_y0 + EDGEAI_HUD_H - 1;
+
     uint16_t bg = hud->accel_fail ? 0x1800u : 0x0000u;
     par_lcd_s035_fill_rect(x0, y0, x1, y1, bg);
 
