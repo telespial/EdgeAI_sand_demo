@@ -224,6 +224,16 @@ WS_DIR="$PWD/mcuxsdk_ws_test" ./tools/flash_frdmmcxn947.sh
 - Failsafe pointer: `docs/failsafe.md` -> `failsafe/FAILSAFE_2026-02-14_v28_from_v27_7bab699.elf`
 - Build: `-DEDGEAI_ENABLE_NPU_INFERENCE=1 -DEDGEAI_NPU_BACKEND=1`
 
+### 2026-02-14 Golden (Current): Restore v27 Exact Working Image
+- Tag: `GOLDEN_2026-02-14_v29_restore_v27_exact`
+- Lock tag: `GOLDEN_LOCK_2026-02-14_v29_*` (includes SHA in name; do not move)
+- Commit: `7bab69912abc2de358ceaa6b897fa8fce143de32`
+- Hardware: FRDM-MCXN947 + PAR-LCD-S035 + Accel 4 Click (FXLS8974CF over mikroBUS/I2C)
+- Behavior: exact working runtime restored from v27 (NPU glint enabled build).
+- Failsafe pointer: `docs/failsafe.md` -> `failsafe/FAILSAFE_2026-02-14_v29_restore_v27_exact_7bab699.elf`
+- Build: `-DEDGEAI_ENABLE_NPU_INFERENCE=1 -DEDGEAI_NPU_BACKEND=1`
+- Notes: use this entry for recovery if newer promoted states regress behavior.
+
 ## Template (Copy/Paste)
 ### YYYY-MM-DD Short Name
 - Tag: `TAG_NAME`
