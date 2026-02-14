@@ -217,12 +217,13 @@ WS_DIR="$PWD/mcuxsdk_ws_test" ./tools/flash_frdmmcxn947.sh
 
 ### 2026-02-14 Golden (Current): HUD Top-Left + Startup Visibility
 - Tag: `GOLDEN_2026-02-14_v31_hud_top_left_boot_visible`
-- Lock tag: `GOLDEN_LOCK_2026-02-14_v31_*` (includes SHA in name; do not move)
-- Commit: `git rev-parse GOLDEN_2026-02-14_v31_hud_top_left_boot_visible`
+- Lock tag: `GOLDEN_LOCK_2026-02-14_v31_4b59071` (includes SHA in name; do not move)
+- Commit: `4b590716c2818e98d865f3719a8d1e3ee5331cfe`
 - Hardware: FRDM-MCXN947 + PAR-LCD-S035 + Accel 4 Click (FXLS8974CF over mikroBUS/I2C)
 - Behavior: keeps the v27 NPU glint path and moves the blue status HUD to top-left. HUD rendering is decoupled from ball dirty-rect updates so status text is visible immediately after startup background draw.
 - Build: `-DEDGEAI_ENABLE_NPU_INFERENCE=1 -DEDGEAI_NPU_BACKEND=1`
 - Example build (debug): `west build -d build_v27_exact_flags mcuxsdk/examples/demo_apps/edgeai_sand_demo --toolchain armgcc --config debug -b frdmmcxn947 -Dcore_id=cm33_core0 -DEDGEAI_ENABLE_NPU_INFERENCE=1 -DEDGEAI_NPU_BACKEND=1`
+- Failsafe artifact: `failsafe/FAILSAFE_2026-02-14_v31_hud_top_left_boot_visible_4b59071.elf`
 
 ## Template (Copy/Paste)
 ### YYYY-MM-DD Short Name
