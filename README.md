@@ -2,8 +2,7 @@
 
 This repo is a hardware sandbox for FRDM-MCXN947 + PAR-LCD-S035 + Accel 4 Click (FXLS8974CF over mikroBUS/I2C).
 
-![sanddune](https://github.com/user-attachments/assets/6ef2d9e0-e8f4-43dd-9bd6-0fa189728d67)
-
+![sanddune2](https://github.com/user-attachments/assets/0c5ac62f-f8a7-4aa4-8526-7245b28bbed4)
 
 Current demo (known-good):
 - Tilt-controlled "silver ball" with shadow and motion trails (480x320).
